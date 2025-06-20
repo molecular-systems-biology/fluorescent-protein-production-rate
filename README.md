@@ -8,7 +8,7 @@ All installation instructions assume that you have Anaconda installed. If you do
 ### Users
 Use these instructions if you want to use the code in your own projects, but do not plan to make any changes to it. If you (may) want to make changes, see the "Developers" section below.
 
-1. Download the .zip format release file. You can look through the [releases list](github.com/molecular-systems-biology/fluorescent-protein-production-rate/releases) to find a specific version, or just download the [latest release](github.com/molecular-systems-biology/fluorescent-protein-production-rate/releases/latest).
+1. Download the .zip format release file. You can look through the [releases list](https://github.com/molecular-systems-biology/fluorescent-protein-production-rate/releases) to find a specific version, or just download the [latest release](https://github.com/molecular-systems-biology/fluorescent-protein-production-rate/releases/latest).
 2. Unzip the file to a location of your choice.
 3. Open an (Anaconda) shell and navigate to the unzipped folder. You need to be in the folder that contains the `setup.py` file.
 4. Run the following command to set up a new Conda environment with the required dependencies:
@@ -113,7 +113,7 @@ Please __do not__ commit directly to the `main` branch. Instead, create a new br
 Please do not submit pull requests until any additional classes or methods you have added are sufficiently documented, including use of type hints.
 
 ### Issues
-If there are problems or desirable new features, consider opening an [issue](github.com/molecular-systems-biology/fluorescent-protein-production-rate/issues) on the repository.
+If there are problems or desirable new features, consider opening an [issue](https://github.com/molecular-systems-biology/fluorescent-protein-production-rate/issues) on the repository.
 
 ### Releases
 Before creating a new release, make a dedicated commit where you set the version string in `setup.py` and `fluorescent_protein_production_rate/fluorescent_protein_production_rate.py` to match the tag that you will give to the new release.
