@@ -1,0 +1,14 @@
+name: fppr_env
+dependencies:
+# These specific versions have been tested. It is likely that other versions
+# will work too.
+  - python=3.13
+  - numpy=2.2.6
+  - pandas=2.3.0
+  - matplotlib=3.10.3
+  - scikit-learn=1.6.1
+# Add pip for performing the local install.
+  - pip
+# Include ipykernel to simplify installation. Most users will need it 
+# even though it is not strictly a dependency.
+  - ipykernel
