@@ -21,7 +21,7 @@ from sklearn.gaussian_process.kernels import (
 
 # This should match with the version string in setup.py and the GitHub
 # release tag.
-_VERSION: str = "0.1.0"
+_VERSION: str = "1.0"
 
 
 class MissingDataWarning(Warning):
