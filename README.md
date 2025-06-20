@@ -36,7 +36,7 @@ If you want to make changes to the code, or contribute to the project, follow th
 
 1. Open an (Anaconda) shell and navigate to the folder where you want to clone the repository. Then run:
     ```
-    git clone github.com/molecular-systems-biology/fluorescent-protein-production-rate.git
+    git clone https://github.com/molecular-systems-biology/fluorescent-protein-production-rate
     ```
 2. Navigate into the cloned repository:
    ```
