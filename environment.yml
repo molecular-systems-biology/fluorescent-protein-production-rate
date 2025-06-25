@@ -1,4 +1,7 @@
 name: fppr_env
+channels:
+  - conda-forge
+  - defaults
 dependencies:
 # These specific versions have been tested. It is likely that other versions
 # will work too.
