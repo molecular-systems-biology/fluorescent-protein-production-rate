@@ -1418,14 +1418,14 @@ class CellCycle:
             before or after the cycle end events for smoothing purposes.
             Default is 8.
         """
-        self._validate_input_data_frame()
+        self._validate_input_data_frames()
         self._validate_cycle_events()
         self._validate_input_data_frame_time_ids()
         self._validate_sufficient_extra_data_points(
             min_extra_data_points, max_extra_data_points
         )
         
-    def _validate_input_data_frame(self) -> None:
+    def _validate_input_data_frames(self) -> None:
         """
         Validate that the input data frames have the required columns.
         Warn if there is any missing data in columns other than TimeID.
@@ -1433,9 +1433,9 @@ class CellCycle:
         Raises
         ------
         ValueError
-            If any of the required columns are missing from the input 
-            data frames `cell_data`, `previous_bud_data`, or 
-            `current_bud_data`.
+            If any of the input `cell_data`, `previous_bud_data`, or
+            `current_bud_data` DataFrames are empty, or if they are 
+            missing any of the required columns.
 
         Warns
         -----
@@ -1448,6 +1448,12 @@ class CellCycle:
             "previous_bud_data": self.previous_bud_data,
             "current_bud_data": self.current_bud_data
         }
+        for name, df in input_dfs.items():
+            if df.empty:
+                raise ValueError(
+                    f"Cycle {self.cycle_id} data frame {name} is empty."
+                )
+        
         required_cell_cols = {"TimeID", "Volume", "Concentration", "Interpolate"}
         required_bud_cols = {"TimeID", "Volume", "Interpolate"}
         
