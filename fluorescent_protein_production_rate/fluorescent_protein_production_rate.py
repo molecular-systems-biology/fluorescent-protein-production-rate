@@ -2294,7 +2294,7 @@ class FluorescentProteinProductionRateExperiment:
         # Check that maturation_time is provided if maturation correction is enabled.
         # Do it here so that we can raise the error before starting the analysis.
         if (
-            calculate_production_rate_kwargs.get("apply_maturation_correction", True) 
+            calculate_production_rate_kwargs.get("apply_maturation_correction", False) 
             and calculate_production_rate_kwargs.get("maturation_time", None) is None
         ):
             raise ValueError(
