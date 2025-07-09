@@ -1979,11 +1979,13 @@ class FluorescentProteinProductionRateExperiment:
     
     @property
     def specific_production_rate_gp(self) -> GaussianProcessRegressor:
-        """Gaussian process model for rate of abundance change."""
+        """
+        Gaussian process model for volume specific production rate.
+        """
         if self._specific_production_rate_gp is None:
             raise ValueError(
-                "Rate of abundance change Gaussian process not fitted. "
-                "Call calculate_experiment_rate_of_change() first."
+                "Volume specific production rate Gaussian process not fitted. "
+                "Call fit_specific_production_rate_gp() first."
             )
         return self._specific_production_rate_gp
     
