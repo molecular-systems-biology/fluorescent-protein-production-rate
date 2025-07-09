@@ -672,8 +672,10 @@ class CellCycle:
         Calculate the fluorescent protein production rate.
 
         This method estimates the production rate of a fluorescent 
-        protein based on the smoothed abundance data. Optionally, it can
-        apply a correction for the fluorophore maturation time.
+        protein based on the smoothed abundance data. It also calculates
+        the relative production rate by dividing the production rate by
+        the mean value. Optionally, it can apply a correction for the 
+        fluorophore maturation time.
 
         Parameters
         ----------
@@ -730,6 +732,9 @@ class CellCycle:
         # Downsample the rate of change to match the original time points and store.
         production_rate = production_rate[::steps_per_timepoint]
         self._cycle_data["Production rate"] = production_rate
+        self._cycle_data["Normalised production rate"] = (
+            production_rate / production_rate.mean()
+        )
         return self
     
     def calculate_smoothed_volume(
@@ -1841,6 +1846,8 @@ class FluorescentProteinProductionRateExperiment:
         
         # Experiment-wide analysis results
         self._aligned_cycle_data: Optional[pd.DataFrame] = None
+        self._production_rate_gp: Optional[GaussianProcessRegressor] = None
+        self._normalised_production_rate_gp: Optional[GaussianProcessRegressor] = None
         self._specific_production_rate_gp: Optional[GaussianProcessRegressor] = None
 
     def __bool__(self) -> bool:
@@ -1978,14 +1985,43 @@ class FluorescentProteinProductionRateExperiment:
         return self._aligned_cycle_data
     
     @property
+    def production_rate_gp(self) -> GaussianProcessRegressor:
+        """
+        Gaussian process model for production rate. Note that the GP
+        is fitted to mean-scaled and centered values.
+        """
+        if self._production_rate_gp is None:
+            raise ValueError(
+                "Production rate Gaussian process not fitted. "
+                "Call fit_production_rate_gp(rate_type='basic') first."
+            )
+        return self._production_rate_gp
+    
+    @property
+    def normalised_production_rate_gp(self) -> GaussianProcessRegressor:
+        """
+        Gaussian process model for the per-cycle normalised production 
+        rate. Note that the GP is fitted to mean-scaled and centered 
+        values.
+        """
+        if self._normalised_production_rate_gp is None:
+            raise ValueError(
+                "Normalised production rate Gaussian process not fitted. "
+                "Call fit_production_rate_gp(rate_type='normalised') first."
+            )
+        return self._normalised_production_rate_gp
+    
+    @property
     def specific_production_rate_gp(self) -> GaussianProcessRegressor:
         """
         Gaussian process model for volume specific production rate.
+        Note that the GP is fitted to mean-scaled and centered 
+        values.
         """
         if self._specific_production_rate_gp is None:
             raise ValueError(
                 "Volume specific production rate Gaussian process not fitted. "
-                "Call fit_specific_production_rate_gp() first."
+                "Call fit_specific_production_rate_gp(rate_type='specific') first."
             )
         return self._specific_production_rate_gp
     
@@ -2405,9 +2441,10 @@ class FluorescentProteinProductionRateExperiment:
         }
         self._aligned_cycle_data = pd.concat(aligned_cycle_data)
         return self
-
-    def fit_specific_production_rate_gp(
+    
+    def fit_production_rate_gp(
             self,
+            rate_type: str,
             constant_value: float = 1.0,
             constant_value_bounds: Tuple[float, float] = (1e-5, 1e5),
             length_scale: float = 0.2,
@@ -2419,13 +2456,21 @@ class FluorescentProteinProductionRateExperiment:
             random_seed: int = 42
         ) -> Self:
         """
-        This method combines volume-specific production rate data from 
-        all analyzed cell cycles and fits a single Gaussian process 
-        model to capture the mean behavior across the standardized cell 
-        cycle progression.
+        This method combines production rate data from all analyzed cell
+        cycles and fits a single Gaussian process model to capture the 
+        mean behavior across the standardized cell cycle progression.
 
         Parameters
         ----------
+        rate_type : str, optional
+            The type of production rate to fit. Supported values are:
+            - "basic": Fit a Gaussian process to the estimated
+                production rates.
+            - "normalised": Fit a Gaussian process to the production
+                rates normalised by the mean production rate on a per-
+                cycle basis.
+            - "specific": Fit a Gaussian process to the volume-specific
+                production rates.
         constant_value : float, optional
             Initial value for the constant kernel. Default is 1.0.
         constant_value_bounds : Tuple[float, float], optional
@@ -2470,47 +2515,128 @@ class FluorescentProteinProductionRateExperiment:
         )
 
         gp_time = self.aligned_cycle_data["Standard coordinate"].values[:, np.newaxis]
-        gp_rate = self.aligned_cycle_data["Specific production rate"].values[:, np.newaxis]
-        mean_rate = self.aligned_cycle_data["Specific production rate"].mean()
-        # Center the data around 0 to produce better fits.
-        gp_fit = gp_regressor.fit(gp_time, gp_rate - mean_rate)
+        match rate_type.strip().lower():
+            case "basic":
+                gp_rate = (
+                    self.aligned_cycle_data["Production rate"].values[:, np.newaxis]
+                )
+            case "normalised":
+                gp_rate = (
+                    self.aligned_cycle_data["Normalised production rate"]
+                    .values[:, np.newaxis]
+                )
+            case "specific":
+                gp_rate = (
+                    self.aligned_cycle_data["Specific production rate"]
+                    .values[:, np.newaxis]
+                )
+            case _:
+                raise ValueError(
+                    f"Invalid rate_type '{rate_type}'. "
+                    "Valid options are: 'basic', 'normalised', 'specific'."
+                )
+        mean_rate = gp_rate.mean()
+        # Scale and center the data around 0 to produce better fits.
+        gp_fit = gp_regressor.fit(gp_time, (gp_rate / mean_rate) - 1)
 
         # Store the Gaussian process model in the experiment.
-        self._specific_production_rate_gp = gp_fit
+        match rate_type.strip().lower():
+            case "basic":
+                self._production_rate_gp = gp_fit
+            case "normalised":
+                self._normalised_production_rate_gp = gp_fit
+            case "specific":
+                self._specific_production_rate_gp = gp_fit
         return self
 
 
     # Plotting methods.
-    def plot_specific_production_rate(
-            self, figsize: Tuple[float, float] = (10.0, 6.0)
+    def plot_production_rate(
+            self, rate_type: str, figsize: Tuple[float, float] = (10.0, 6.0)
         ) -> Figure:
         """
-        Plot the volume-specific production rate across all cell cycles.
+        Plot one of three different production rates across all cell 
+        cycles in the experiment, aligned to a standard cell cycle
+        coordinate system.
+
+        Parameters
+        ----------
+        rate_type : str
+            The type of production rate to plot. Supported values are:
+            - "basic": Plot the estimated production rates.
+            - "normalised": Plot the normalised production rates.
+            - "specific": Plot the volume-specific production rates.
+        figsize : Tuple[float, float], optional
+            Size of the figure to create. Default is (10.0, 6.0).
+
+        Returns
+        -------
+        Figure
+            A matplotlib Figure object containing the plot.
         """
-        fig, ax = plt.subplots(figsize=figsize, layout="constrained")
-        # Plot the aligned cycle data.
-        for cycle_id in self.cell_cycles:
-            ax.plot(
-                self.aligned_cycle_data.loc[cycle_id, "Standard coordinate"],
-                self.aligned_cycle_data.loc[cycle_id, "Specific production rate"],
-                marker="o",
-                linestyle="none",
-                color="grey",
-                alpha=0.5
-            )
         # Calculate the mean and standard deviation from the Gaussian process model.
+        # Do this first to ensure to raise an error as soon as possible if the
+        # Gaussian process model has not been fitted.
         standard_coordinate_anchors = tuple(self.standard_coordinate_anchors.values())
         gp_time = np.linspace(
             standard_coordinate_anchors[0],
             standard_coordinate_anchors[-1],
             100
         )
-        gp_mean, gp_std = self.specific_production_rate_gp.predict(
-            gp_time[:, np.newaxis], return_std=True
-        )
-        # Compensate for the centering performed before fitting.
-        gp_mean += self.aligned_cycle_data["Specific production rate"].mean()
 
+        match rate_type.strip().lower():
+            case "basic":
+                gp_mean, gp_std = self.production_rate_gp.predict(
+                    gp_time[:, np.newaxis], return_std=True
+                )
+                column = "Production rate"
+                title = (
+                    f"{self.experiment_id}, {len(self.cell_cycles)} cycles - "
+                    "Production rate"
+                )
+                y_label = "Production rate (a.u. min⁻¹)"
+            case "normalised":
+                gp_mean, gp_std = self.normalised_production_rate_gp.predict(
+                    gp_time[:, np.newaxis], return_std=True
+                )
+                column = "Normalised production rate"
+                title = (
+                    f"{self.experiment_id}, {len(self.cell_cycles)} cycles - "
+                    "Normalised production Rate"
+                )
+                y_label = "Normalised production rate (a.u. min⁻¹)"
+            case "specific":
+                gp_mean, gp_std = self.specific_production_rate_gp.predict(
+                    gp_time[:, np.newaxis], return_std=True
+                )
+                column = "Specific production rate"
+                title = (
+                    f"{self.experiment_id}, {len(self.cell_cycles)} cycles - "
+                    "Volume specific production Rate"
+                )
+                y_label = "Volume specific production rate (a.u. min⁻¹ fL⁻¹)"
+            case _:
+                raise ValueError(
+                    f"Invalid rate_type '{rate_type}'. "
+                    "Valid options are: 'basic', 'normalised', 'specific'."
+                )
+        # Compensate for the scaling and centering performed before fitting.
+        rate_mean = self.aligned_cycle_data[column].mean()
+        gp_mean += 1
+        gp_mean *= rate_mean
+        gp_std *= rate_mean
+        
+        fig, ax = plt.subplots(figsize=figsize, layout="constrained")
+        # Plot the aligned cycle data.
+        for cycle_id in self.cell_cycles:
+            ax.plot(
+                self.aligned_cycle_data.loc[cycle_id, "Standard coordinate"],
+                self.aligned_cycle_data.loc[cycle_id, column],
+                marker="o",
+                linestyle="none",
+                color="grey",
+                alpha=0.5
+            )
         # Plot the Gaussian process mean and standard deviation.
         ax.plot(
             gp_time, 
@@ -2544,11 +2670,8 @@ class FluorescentProteinProductionRateExperiment:
             ax.axvline(anchor, color=color, linestyle=linestyle, label=event_name)
 
         ax.set_xlabel("Standard cell cycle coordinate")
-        ax.set_ylabel("Volume specific production rate (a.u. min⁻¹ fL⁻¹)")
-        ax.set_title(
-            f"{self.experiment_id}, {len(self.cell_cycles)} cycles - "
-            "Volume Specific Production Rate"
-        )
+        ax.set_ylabel(y_label)
+        ax.set_title(title)
         ax.legend(*_deduplicate_legend_items(ax.get_legend_handles_labels()))
         return fig
 
