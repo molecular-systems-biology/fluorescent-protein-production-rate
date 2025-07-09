@@ -969,7 +969,7 @@ class CellCycle:
     def plot(
             self, 
             plot_type: str,
-            figsize: Tuple[float, float] = (10.0, 6.0),
+            figsize: Optional[Tuple[float, float]] = None,
             add_title: bool = True,
             show_events: bool = True,
             show_events_in_legend: bool = True,
@@ -987,7 +987,9 @@ class CellCycle:
             - "production rate": Plots the production rate data.
             - "overview": Provides an overview plot of all data.
         figsize : Tuple[float, float], optional
-            The size of the figure in inches, by default (10.0, 6.0).
+            The size of the figure in inches. If None, uses (10.0, 6.0)
+            for all plot types other than "overview" which instead uses
+            (20.0, 12.0). Default is None.
         add_title : bool, optional
             Whether to add a title to the plot. If plot_type is
             "overview", adds the title as the figure suptitle instead.
@@ -1014,14 +1016,19 @@ class CellCycle:
         match plot_type.strip().lower():
             case "volume":
                 plot_func = self._plot_volume
+                figsize = (10.0, 6.0) if figsize is None else figsize
             case "concentration":
                 plot_func = self._plot_concentration
+                figsize = (10.0, 6.0) if figsize is None else figsize
             case "abundance":
                 plot_func = self._plot_abundance
+                figsize = (10.0, 6.0) if figsize is None else figsize
             case "production rate":
                 plot_func = self._plot_production_rate
+                figsize = (10.0, 6.0) if figsize is None else figsize
             case "overview":
                 plot_func = self._plot_overview
+                figsize = (20.0, 12.0) if figsize is None else figsize
             case _:
                 raise ValueError(
                     f"Unknown plot type '{plot_type}'. "
