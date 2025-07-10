@@ -472,6 +472,14 @@ class CellCycle:
         Self
             The instance of the class with the merged cycle data stored 
             and accessible from the .cycle_data attribute.
+
+        Notes
+        -----
+        The merged cycle data is clipped to have no more than 
+        `max_extra_data_points` before the previous cycle end and
+        after the current cycle end. In the case that Bud_0 is None,
+        points will be clipped before the current cycle if they are
+        missing from either the mother or previous bud data.
         """
         # Prepare data for merging. Delete any datapoints which should be removed,
         # interpolate any resulting missing values, and then remove the redundant 
@@ -503,13 +511,23 @@ class CellCycle:
         merged_data.set_index(merged_data["TimeID"].values, inplace=True)
 
         # Ensure that bud volumes are set to 0 up to and including the relevant bud
-        # events.
-        pre_bud_mask = merged_data["TimeID"] <= self.previous_bud_time_id
-        merged_data.loc[pre_bud_mask, "Previous bud volume"] = 0.0
+        # events. Skip this for the previous bud if Bud_0 is None.
+        if self.previous_bud_time_id is not None:
+            pre_bud_mask = merged_data["TimeID"] <= self.previous_bud_time_id
+            merged_data.loc[pre_bud_mask, "Previous bud volume"] = 0.0
 
         pre_bud_mask = merged_data["TimeID"] <= self.current_bud_time_id
         merged_data.loc[pre_bud_mask, "Current bud volume"] = 0.0
 
+        # If Bud_0 is None, remove any time points from the previous cycle where either
+        # previous bud data is missing.
+        if self.previous_bud_time_id is None:
+            mask = (
+                (merged_data["TimeID"] < self.current_bud_time_id)
+                & (merged_data["Previous bud volume"].isna())
+            )
+            merged_data = merged_data.loc[~mask]
+        
         # Handle any remaining NaN values, particularly the bud volumes from budding up 
         # to the first point at which they were tracked.
         merged_data.interpolate(method="linear", axis="rows", inplace=True)
@@ -1501,7 +1519,9 @@ class CellCycle:
 
         This method checks that the cycle events are correctly ordered,
         that they reference valid TimeIDs, and that all required events
-        are present. It raises errors if any issues are found.
+        are present. The only exception is that "Bud_0" may be None to
+        accomodate situations where not all previous bud data is
+        available. It raises errors if any issues are found.
 
         Raises
         ------
@@ -1520,7 +1540,13 @@ class CellCycle:
                 raise ValueError(
                     f"Cycle {self.cycle_id} missing essential cycle event: '{key}'"
                 )
-            if i and self.cycle_events[key] <= self.cycle_events[event_keys[i - 1]]:
+            # Check that TimeIDs are in order. Allow for "Bud_0" to be None.
+            if key == "Bud_0" and self.cycle_events["Bud_0"] is None:
+                continue
+            elif event_keys[i - 1] == "Bud_0" and self.cycle_events["Bud_0"] is None:
+                # Can't compare Bud_0 to the previous event, so skip.
+                continue
+            elif i and self.cycle_events[key] <= self.cycle_events[event_keys[i - 1]]:
                 raise ValueError(
                     f"Cycle {self.cycle_id} event '{key}' has TimeID "
                     f"{self.cycle_events[key]} which is less than or equal to the "
@@ -1531,11 +1557,12 @@ class CellCycle:
         # Validate that all cycle events reference TimeIDs which have corresponding 
         # data points.
         all_time_ids = set(self.cell_data["TimeID"])
-        for event_name, time_id in self.cycle_events.items():
-            if time_id not in all_time_ids:
+        for key, value in self.cycle_events.items():
+            if key == "Bud_0" and value is None:
+                continue
+            elif value not in all_time_ids:
                 raise ValueError(
-                    f"Cycle {self.cycle_id} event '{event_name}' "
-                    f"references TimeID: {time_id} "
+                    f"Cycle {self.cycle_id} event '{key}' references TimeID: {value} "
                     f"which is not present in cell_data."
                 )
     
@@ -1591,7 +1618,10 @@ class CellCycle:
         # Validate that bud data TimeIDs are within the required ranges.
         min_time_id = self.previous_bud_data["TimeID"].min()
         max_time_id = self.previous_bud_data["TimeID"].max()
-        if min_time_id < self.cycle_events["Bud_0"]:
+        # Allow for "Bud_0" to be None.
+        if self.cycle_events["Bud_0"] is None:
+            pass
+        elif min_time_id < self.cycle_events["Bud_0"]:
             raise ValueError(
                 f"Cycle {self.cycle_id} previous_bud_data TimeIDs begin at "
                 f"{min_time_id}, which is before the bud event in the previous cycle: "
@@ -1628,7 +1658,9 @@ class CellCycle:
         ) -> None:
         """
         Validate that the cycle data has sufficient extra data points
-        before and after the cycle end events for smoothing purposes.
+        before and after the cycle end events for smoothing purposes. 
+        Also checks the previous bud data in the event that "Bud_0" is
+        None.
         
         Parameters
         ----------
@@ -1671,6 +1703,28 @@ class CellCycle:
                 f"which is less than the maximum of {max_extra_data_points}.",
                 InsufficientDataWarning
             )
+        # If "Bud_0" is None, need to verify that there are sufficient extra
+        # data points in the previous bud data because we can't interpolate back
+        # to the previous bud event.
+        if self.cycle_events["Bud_0"] is None:
+            extra_previous_bud_data_points = (
+                previous_cycle_end_time_id - self.previous_bud_data["TimeID"].min()
+            )
+            if extra_previous_bud_data_points < min_extra_data_points:
+                raise ValueError(
+                    f"Cycle {self.cycle_id} Bud_0 is None and previous_bud_data "
+                    f"only has {extra_previous_bud_data_points} data points before the "
+                    f"previous cycle end event which is less than the minimum of "
+                    f"{min_extra_data_points}."
+                )
+            if extra_previous_bud_data_points < max_extra_data_points:
+                warn(
+                    f"Cycle {self.cycle_id} Bud_0 is None and previous_bud_data "
+                    f"only has {extra_previous_data_points} data points before the " 
+                    f"previous cycle end event which is less than the maximum of "
+                    f"{max_extra_data_points}.",
+                    InsufficientDataWarning
+                )
 
         current_cycle_end_time_id = self.cycle_events[f"{self.cycle_end_event}_1"]
         extra_current_data_points = (
