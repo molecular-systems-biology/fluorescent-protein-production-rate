@@ -21,7 +21,7 @@ from sklearn.gaussian_process.kernels import (
 
 # This should match with the version string in setup.py and the GitHub
 # release tag.
-_VERSION: str = "1.0"
+_VERSION: str = "2.0"
 
 
 class MissingDataWarning(Warning):
@@ -472,6 +472,14 @@ class CellCycle:
         Self
             The instance of the class with the merged cycle data stored 
             and accessible from the .cycle_data attribute.
+
+        Notes
+        -----
+        The merged cycle data is clipped to have no more than 
+        `max_extra_data_points` before the previous cycle end and
+        after the current cycle end. In the case that Bud_0 is None,
+        points will be clipped before the current cycle if they are
+        missing from either the mother or previous bud data.
         """
         # Prepare data for merging. Delete any datapoints which should be removed,
         # interpolate any resulting missing values, and then remove the redundant 
@@ -503,13 +511,23 @@ class CellCycle:
         merged_data.set_index(merged_data["TimeID"].values, inplace=True)
 
         # Ensure that bud volumes are set to 0 up to and including the relevant bud
-        # events.
-        pre_bud_mask = merged_data["TimeID"] <= self.previous_bud_time_id
-        merged_data.loc[pre_bud_mask, "Previous bud volume"] = 0.0
+        # events. Skip this for the previous bud if Bud_0 is None.
+        if self.previous_bud_time_id is not None:
+            pre_bud_mask = merged_data["TimeID"] <= self.previous_bud_time_id
+            merged_data.loc[pre_bud_mask, "Previous bud volume"] = 0.0
 
         pre_bud_mask = merged_data["TimeID"] <= self.current_bud_time_id
         merged_data.loc[pre_bud_mask, "Current bud volume"] = 0.0
 
+        # If Bud_0 is None, remove any time points from the previous cycle where either
+        # previous bud data is missing.
+        if self.previous_bud_time_id is None:
+            mask = (
+                (merged_data["TimeID"] < self.current_bud_time_id)
+                & (merged_data["Previous bud volume"].isna())
+            )
+            merged_data = merged_data.loc[~mask]
+        
         # Handle any remaining NaN values, particularly the bud volumes from budding up 
         # to the first point at which they were tracked.
         merged_data.interpolate(method="linear", axis="rows", inplace=True)
@@ -672,8 +690,10 @@ class CellCycle:
         Calculate the fluorescent protein production rate.
 
         This method estimates the production rate of a fluorescent 
-        protein based on the smoothed abundance data. Optionally, it can
-        apply a correction for the fluorophore maturation time.
+        protein based on the smoothed abundance data. It also calculates
+        the relative production rate by dividing the production rate by
+        the mean value. Optionally, it can apply a correction for the 
+        fluorophore maturation time.
 
         Parameters
         ----------
@@ -730,6 +750,9 @@ class CellCycle:
         # Downsample the rate of change to match the original time points and store.
         production_rate = production_rate[::steps_per_timepoint]
         self._cycle_data["Production rate"] = production_rate
+        self._cycle_data["Normalised production rate"] = (
+            production_rate / production_rate.mean()
+        )
         return self
     
     def calculate_smoothed_volume(
@@ -964,7 +987,7 @@ class CellCycle:
     def plot(
             self, 
             plot_type: str,
-            figsize: Tuple[float, float] = (10.0, 6.0),
+            figsize: Optional[Tuple[float, float]] = None,
             add_title: bool = True,
             show_events: bool = True,
             show_events_in_legend: bool = True,
@@ -982,7 +1005,9 @@ class CellCycle:
             - "production rate": Plots the production rate data.
             - "overview": Provides an overview plot of all data.
         figsize : Tuple[float, float], optional
-            The size of the figure in inches, by default (10.0, 6.0).
+            The size of the figure in inches. If None, uses (10.0, 6.0)
+            for all plot types other than "overview" which instead uses
+            (20.0, 12.0). Default is None.
         add_title : bool, optional
             Whether to add a title to the plot. If plot_type is
             "overview", adds the title as the figure suptitle instead.
@@ -1009,14 +1034,19 @@ class CellCycle:
         match plot_type.strip().lower():
             case "volume":
                 plot_func = self._plot_volume
+                figsize = (10.0, 6.0) if figsize is None else figsize
             case "concentration":
                 plot_func = self._plot_concentration
+                figsize = (10.0, 6.0) if figsize is None else figsize
             case "abundance":
                 plot_func = self._plot_abundance
+                figsize = (10.0, 6.0) if figsize is None else figsize
             case "production rate":
                 plot_func = self._plot_production_rate
+                figsize = (10.0, 6.0) if figsize is None else figsize
             case "overview":
                 plot_func = self._plot_overview
+                figsize = (20.0, 12.0) if figsize is None else figsize
             case _:
                 raise ValueError(
                     f"Unknown plot type '{plot_type}'. "
@@ -1418,14 +1448,14 @@ class CellCycle:
             before or after the cycle end events for smoothing purposes.
             Default is 8.
         """
-        self._validate_input_data_frame()
+        self._validate_input_data_frames()
         self._validate_cycle_events()
         self._validate_input_data_frame_time_ids()
         self._validate_sufficient_extra_data_points(
             min_extra_data_points, max_extra_data_points
         )
         
-    def _validate_input_data_frame(self) -> None:
+    def _validate_input_data_frames(self) -> None:
         """
         Validate that the input data frames have the required columns.
         Warn if there is any missing data in columns other than TimeID.
@@ -1433,9 +1463,9 @@ class CellCycle:
         Raises
         ------
         ValueError
-            If any of the required columns are missing from the input 
-            data frames `cell_data`, `previous_bud_data`, or 
-            `current_bud_data`.
+            If any of the input `cell_data`, `previous_bud_data`, or
+            `current_bud_data` DataFrames are empty, or if they are 
+            missing any of the required columns.
 
         Warns
         -----
@@ -1448,6 +1478,12 @@ class CellCycle:
             "previous_bud_data": self.previous_bud_data,
             "current_bud_data": self.current_bud_data
         }
+        for name, df in input_dfs.items():
+            if df.empty:
+                raise ValueError(
+                    f"Cycle {self.cycle_id} data frame {name} is empty."
+                )
+        
         required_cell_cols = {"TimeID", "Volume", "Concentration", "Interpolate"}
         required_bud_cols = {"TimeID", "Volume", "Interpolate"}
         
@@ -1483,7 +1519,9 @@ class CellCycle:
 
         This method checks that the cycle events are correctly ordered,
         that they reference valid TimeIDs, and that all required events
-        are present. It raises errors if any issues are found.
+        are present. The only exception is that "Bud_0" may be None to
+        accomodate situations where not all previous bud data is
+        available. It raises errors if any issues are found.
 
         Raises
         ------
@@ -1502,7 +1540,13 @@ class CellCycle:
                 raise ValueError(
                     f"Cycle {self.cycle_id} missing essential cycle event: '{key}'"
                 )
-            if i and self.cycle_events[key] <= self.cycle_events[event_keys[i - 1]]:
+            # Check that TimeIDs are in order. Allow for "Bud_0" to be None.
+            if key == "Bud_0" and self.cycle_events["Bud_0"] is None:
+                continue
+            elif event_keys[i - 1] == "Bud_0" and self.cycle_events["Bud_0"] is None:
+                # Can't compare Bud_0 to the previous event, so skip.
+                continue
+            elif i and self.cycle_events[key] <= self.cycle_events[event_keys[i - 1]]:
                 raise ValueError(
                     f"Cycle {self.cycle_id} event '{key}' has TimeID "
                     f"{self.cycle_events[key]} which is less than or equal to the "
@@ -1513,11 +1557,12 @@ class CellCycle:
         # Validate that all cycle events reference TimeIDs which have corresponding 
         # data points.
         all_time_ids = set(self.cell_data["TimeID"])
-        for event_name, time_id in self.cycle_events.items():
-            if time_id not in all_time_ids:
+        for key, value in self.cycle_events.items():
+            if key == "Bud_0" and value is None:
+                continue
+            elif value not in all_time_ids:
                 raise ValueError(
-                    f"Cycle {self.cycle_id} event '{event_name}' "
-                    f"references TimeID: {time_id} "
+                    f"Cycle {self.cycle_id} event '{key}' references TimeID: {value} "
                     f"which is not present in cell_data."
                 )
     
@@ -1573,7 +1618,10 @@ class CellCycle:
         # Validate that bud data TimeIDs are within the required ranges.
         min_time_id = self.previous_bud_data["TimeID"].min()
         max_time_id = self.previous_bud_data["TimeID"].max()
-        if min_time_id < self.cycle_events["Bud_0"]:
+        # Allow for "Bud_0" to be None.
+        if self.cycle_events["Bud_0"] is None:
+            pass
+        elif min_time_id < self.cycle_events["Bud_0"]:
             raise ValueError(
                 f"Cycle {self.cycle_id} previous_bud_data TimeIDs begin at "
                 f"{min_time_id}, which is before the bud event in the previous cycle: "
@@ -1610,7 +1658,9 @@ class CellCycle:
         ) -> None:
         """
         Validate that the cycle data has sufficient extra data points
-        before and after the cycle end events for smoothing purposes.
+        before and after the cycle end events for smoothing purposes. 
+        Also checks the previous bud data in the event that "Bud_0" is
+        None.
         
         Parameters
         ----------
@@ -1653,6 +1703,28 @@ class CellCycle:
                 f"which is less than the maximum of {max_extra_data_points}.",
                 InsufficientDataWarning
             )
+        # If "Bud_0" is None, need to verify that there are sufficient extra
+        # data points in the previous bud data because we can't interpolate back
+        # to the previous bud event.
+        if self.cycle_events["Bud_0"] is None:
+            extra_previous_bud_data_points = (
+                previous_cycle_end_time_id - self.previous_bud_data["TimeID"].min()
+            )
+            if extra_previous_bud_data_points < min_extra_data_points:
+                raise ValueError(
+                    f"Cycle {self.cycle_id} Bud_0 is None and previous_bud_data "
+                    f"only has {extra_previous_bud_data_points} data points before the "
+                    f"previous cycle end event which is less than the minimum of "
+                    f"{min_extra_data_points}."
+                )
+            if extra_previous_bud_data_points < max_extra_data_points:
+                warn(
+                    f"Cycle {self.cycle_id} Bud_0 is None and previous_bud_data "
+                    f"only has {extra_previous_data_points} data points before the " 
+                    f"previous cycle end event which is less than the maximum of "
+                    f"{max_extra_data_points}.",
+                    InsufficientDataWarning
+                )
 
         current_cycle_end_time_id = self.cycle_events[f"{self.cycle_end_event}_1"]
         extra_current_data_points = (
@@ -1835,6 +1907,8 @@ class FluorescentProteinProductionRateExperiment:
         
         # Experiment-wide analysis results
         self._aligned_cycle_data: Optional[pd.DataFrame] = None
+        self._production_rate_gp: Optional[GaussianProcessRegressor] = None
+        self._normalised_production_rate_gp: Optional[GaussianProcessRegressor] = None
         self._specific_production_rate_gp: Optional[GaussianProcessRegressor] = None
 
     def __bool__(self) -> bool:
@@ -1972,12 +2046,43 @@ class FluorescentProteinProductionRateExperiment:
         return self._aligned_cycle_data
     
     @property
+    def production_rate_gp(self) -> GaussianProcessRegressor:
+        """
+        Gaussian process model for production rate. Note that the GP
+        is fitted to mean-scaled and centered values.
+        """
+        if self._production_rate_gp is None:
+            raise ValueError(
+                "Production rate Gaussian process not fitted. "
+                "Call fit_production_rate_gp(rate_type='basic') first."
+            )
+        return self._production_rate_gp
+    
+    @property
+    def normalised_production_rate_gp(self) -> GaussianProcessRegressor:
+        """
+        Gaussian process model for the per-cycle normalised production 
+        rate. Note that the GP is fitted to mean-scaled and centered 
+        values.
+        """
+        if self._normalised_production_rate_gp is None:
+            raise ValueError(
+                "Normalised production rate Gaussian process not fitted. "
+                "Call fit_production_rate_gp(rate_type='normalised') first."
+            )
+        return self._normalised_production_rate_gp
+    
+    @property
     def specific_production_rate_gp(self) -> GaussianProcessRegressor:
-        """Gaussian process model for rate of abundance change."""
+        """
+        Gaussian process model for volume specific production rate.
+        Note that the GP is fitted to mean-scaled and centered 
+        values.
+        """
         if self._specific_production_rate_gp is None:
             raise ValueError(
-                "Rate of abundance change Gaussian process not fitted. "
-                "Call calculate_experiment_rate_of_change() first."
+                "Volume specific production rate Gaussian process not fitted. "
+                "Call fit_specific_production_rate_gp(rate_type='specific') first."
             )
         return self._specific_production_rate_gp
     
@@ -2029,17 +2134,25 @@ class FluorescentProteinProductionRateExperiment:
         if cycle_id in self.cell_cycles:
             raise ValueError(f"Cell cycle '{cycle_id}' already exists in experiment")
         
-        # Create and add the CellCycle object.
-        cell_cycle = CellCycle(
-            cycle_id=cycle_id,
-            mother_data=mother_data,
-            previous_bud_data=previous_bud_data,
-            current_bud_data=current_bud_data,
-            cycle_events=cycle_events,
-            cycle_end_event=self.cycle_end_event,
-            min_extra_data_points=self.min_extra_data_points,
-            max_extra_data_points=self.max_extra_data_points
-        )
+        try:
+            # Create and add the CellCycle object.
+            cell_cycle = CellCycle(
+                cycle_id=cycle_id,
+                mother_data=mother_data,
+                previous_bud_data=previous_bud_data,
+                current_bud_data=current_bud_data,
+                cycle_events=cycle_events,
+                cycle_end_event=self.cycle_end_event,
+                min_extra_data_points=self.min_extra_data_points,
+                max_extra_data_points=self.max_extra_data_points
+            )
+        except Exception as e:
+            e.add_note(
+                f"This error occurred while creating CellCycle with "
+                f"cycle_id: {cycle_id} in experiment {self.experiment_id}."
+            )
+            raise e
+        
         self._cell_cycles[cycle_id] = cell_cycle
         return cell_cycle
     
@@ -2070,11 +2183,18 @@ class FluorescentProteinProductionRateExperiment:
         -------
         Self
         """
-        for cycle in self:
-            cycle.merge_cycle_data(
-                image_capture_interval=self.image_capture_interval,
-                max_extra_data_points=self.max_extra_data_points
+        try:
+            for cycle in self:
+                cycle.merge_cycle_data(
+                    image_capture_interval=self.image_capture_interval,
+                    max_extra_data_points=self.max_extra_data_points
+                )
+        except Exception as e:
+            e.add_note(
+                "This error occurred while running merge_cycle_data() for cycle "
+                f"{cycle.cycle_id} in experiment {self.experiment_id}."
             )
+            raise e
         return self
     
     def calculate_abundance(self) -> Self:
@@ -2086,8 +2206,15 @@ class FluorescentProteinProductionRateExperiment:
         -------
         Self
         """
-        for cycle in self:
-            cycle.calculate_abundance()
+        try:
+            for cycle in self:
+                cycle.calculate_abundance()
+        except Exception as e:
+            e.add_note(
+                "This error occurred while running calculate_abundance() for cycle "
+                f"{cycle.cycle_id} in experiment {self.experiment_id}."
+            )
+            raise e
         return self
     
     def calculate_smoothed_abundance(
@@ -2145,20 +2272,27 @@ class FluorescentProteinProductionRateExperiment:
         -------
         Self
         """
-        for cycle in self:
-            cycle.calculate_smoothed_abundance(
-                constant_value,
-                constant_value_bounds,
-                length_scale,
-                length_scale_bounds,
-                alpha,
-                alpha_bounds,
-                noise_level,
-                noise_level_bounds,
-                gp_alpha,
-                n_restarts, 
-                random_seed
+        try:
+            for cycle in self:
+                cycle.calculate_smoothed_abundance(
+                    constant_value,
+                    constant_value_bounds,
+                    length_scale,
+                    length_scale_bounds,
+                    alpha,
+                    alpha_bounds,
+                    noise_level,
+                    noise_level_bounds,
+                    gp_alpha,
+                    n_restarts, 
+                    random_seed
+                )
+        except Exception as e:
+            e.add_note(
+                "This error occurred while running calculate_smoothed_abundance() for "
+                f"cycle {cycle.cycle_id} in experiment {self.experiment_id}."
             )
+            raise e
         return self
     
     def calculate_production_rate(
@@ -2184,8 +2318,15 @@ class FluorescentProteinProductionRateExperiment:
         -------
         Self
         """
-        for cycle in self:
-            cycle.calculate_production_rate(apply_maturation_correction, maturation_time)
+        try:
+            for cycle in self:
+                cycle.calculate_production_rate(apply_maturation_correction, maturation_time)
+        except Exception as e:
+            e.add_note(
+                "This error occurred while running calculate_production_rate() for "
+                f"cycle {cycle.cycle_id} in experiment {self.experiment_id}."
+            )
+            raise e
         return self
     
     def calculate_smoothed_volume(
@@ -2234,18 +2375,25 @@ class FluorescentProteinProductionRateExperiment:
         -------
         Self
         """
-        for cycle in self:
-            cycle.calculate_smoothed_volume(
-                constant_value,
-                constant_value_bounds,
-                length_scale,
-                length_scale_bounds,
-                noise_level,
-                noise_level_bounds,
-                gp_alpha,
-                n_restarts, 
-                random_seed
+        try:
+            for cycle in self:
+                cycle.calculate_smoothed_volume(
+                    constant_value,
+                    constant_value_bounds,
+                    length_scale,
+                    length_scale_bounds,
+                    noise_level,
+                    noise_level_bounds,
+                    gp_alpha,
+                    n_restarts, 
+                    random_seed
+                )
+        except Exception as e:
+            e.add_note(
+                "This error occurred while running calculate_smoothed_volume() for "
+                f"cycle {cycle.cycle_id} in experiment {self.experiment_id}."
             )
+            raise e
         return self
     
     def calculate_volume_specific_production_rate(self) -> Self:
@@ -2257,8 +2405,16 @@ class FluorescentProteinProductionRateExperiment:
         -------
         Self
         """
-        for cycle in self.cell_cycles.values():
-            cycle.calculate_volume_specific_production_rate()
+        try:
+            for cycle in self.cell_cycles.values():
+                cycle.calculate_volume_specific_production_rate()
+        except Exception as e:
+            e.add_note(
+                "This error occurred while running "
+                f"calculate_volume_specific_production_rate() for cycle "
+                f"{cycle.cycle_id} in experiment {self.experiment_id}."
+            )
+            raise e
         return self
     
     def calculate_all_cycle_values(
@@ -2294,21 +2450,27 @@ class FluorescentProteinProductionRateExperiment:
         # Check that maturation_time is provided if maturation correction is enabled.
         # Do it here so that we can raise the error before starting the analysis.
         if (
-            calculate_production_rate_kwargs.get("apply_maturation_correction", True) 
+            calculate_production_rate_kwargs.get("apply_maturation_correction", False) 
             and calculate_production_rate_kwargs.get("maturation_time", None) is None
         ):
             raise ValueError(
                 "Maturation time must be provided for maturation correction."
             )
-        
-        for cycle in self:
-            cycle.calculate_all_cycle_values(
-                self.image_capture_interval,
-                self.max_extra_data_points,
-                calculate_smoothed_abundance_kwargs,
-                calculate_production_rate_kwargs,
-                calculate_smoothed_volume_kwargs
+        try:
+            for cycle in self:
+                cycle.calculate_all_cycle_values(
+                    self.image_capture_interval,
+                    self.max_extra_data_points,
+                    calculate_smoothed_abundance_kwargs,
+                    calculate_production_rate_kwargs,
+                    calculate_smoothed_volume_kwargs
+                )
+        except Exception as e:
+            e.add_note(
+                "This error occurred while running calculate_all_cycle_values() for "
+                f"cycle {cycle.cycle_id} in experiment {self.experiment_id}."
             )
+            raise e
         return self
     
     def align_to_standard_coordinate(self) -> Self:
@@ -2316,8 +2478,15 @@ class FluorescentProteinProductionRateExperiment:
         Map all cell cycles to standardized cell cycle progression 
         coordinates.
         """
-        for cycle in self:
-            cycle.align_to_standard_coordinate(self.standard_coordinate_anchors)
+        try:
+            for cycle in self:
+                cycle.align_to_standard_coordinate(self.standard_coordinate_anchors)
+        except Exception as e:
+            e.add_note(
+                "This error occurred while running align_to_standard_coordinate() for "
+                f"cycle {cycle.cycle_id} in experiment {self.experiment_id}."
+            )
+            raise e
         return self
     
     def calculate_standard_coordinate_anchors(
@@ -2397,9 +2566,10 @@ class FluorescentProteinProductionRateExperiment:
         }
         self._aligned_cycle_data = pd.concat(aligned_cycle_data)
         return self
-
-    def fit_specific_production_rate_gp(
+    
+    def fit_production_rate_gp(
             self,
+            rate_type: str,
             constant_value: float = 1.0,
             constant_value_bounds: Tuple[float, float] = (1e-5, 1e5),
             length_scale: float = 0.2,
@@ -2411,13 +2581,21 @@ class FluorescentProteinProductionRateExperiment:
             random_seed: int = 42
         ) -> Self:
         """
-        This method combines volume-specific production rate data from 
-        all analyzed cell cycles and fits a single Gaussian process 
-        model to capture the mean behavior across the standardized cell 
-        cycle progression.
+        This method combines production rate data from all analyzed cell
+        cycles and fits a single Gaussian process model to capture the 
+        mean behavior across the standardized cell cycle progression.
 
         Parameters
         ----------
+        rate_type : str, optional
+            The type of production rate to fit. Supported values are:
+            - "basic": Fit a Gaussian process to the estimated
+                production rates.
+            - "normalised": Fit a Gaussian process to the production
+                rates normalised by the mean production rate on a per-
+                cycle basis.
+            - "specific": Fit a Gaussian process to the volume-specific
+                production rates.
         constant_value : float, optional
             Initial value for the constant kernel. Default is 1.0.
         constant_value_bounds : Tuple[float, float], optional
@@ -2462,47 +2640,128 @@ class FluorescentProteinProductionRateExperiment:
         )
 
         gp_time = self.aligned_cycle_data["Standard coordinate"].values[:, np.newaxis]
-        gp_rate = self.aligned_cycle_data["Specific production rate"].values[:, np.newaxis]
-        mean_rate = self.aligned_cycle_data["Specific production rate"].mean()
-        # Center the data around 0 to produce better fits.
-        gp_fit = gp_regressor.fit(gp_time, gp_rate - mean_rate)
+        match rate_type.strip().lower():
+            case "basic":
+                gp_rate = (
+                    self.aligned_cycle_data["Production rate"].values[:, np.newaxis]
+                )
+            case "normalised":
+                gp_rate = (
+                    self.aligned_cycle_data["Normalised production rate"]
+                    .values[:, np.newaxis]
+                )
+            case "specific":
+                gp_rate = (
+                    self.aligned_cycle_data["Specific production rate"]
+                    .values[:, np.newaxis]
+                )
+            case _:
+                raise ValueError(
+                    f"Invalid rate_type '{rate_type}'. "
+                    "Valid options are: 'basic', 'normalised', 'specific'."
+                )
+        mean_rate = gp_rate.mean()
+        # Scale and center the data around 0 to produce better fits.
+        gp_fit = gp_regressor.fit(gp_time, (gp_rate / mean_rate) - 1)
 
         # Store the Gaussian process model in the experiment.
-        self._specific_production_rate_gp = gp_fit
+        match rate_type.strip().lower():
+            case "basic":
+                self._production_rate_gp = gp_fit
+            case "normalised":
+                self._normalised_production_rate_gp = gp_fit
+            case "specific":
+                self._specific_production_rate_gp = gp_fit
         return self
 
 
     # Plotting methods.
-    def plot_specific_production_rate(
-            self, figsize: Tuple[float, float] = (10.0, 6.0)
+    def plot_production_rate(
+            self, rate_type: str, figsize: Tuple[float, float] = (10.0, 6.0)
         ) -> Figure:
         """
-        Plot the volume-specific production rate across all cell cycles.
+        Plot one of three different production rates across all cell 
+        cycles in the experiment, aligned to a standard cell cycle
+        coordinate system.
+
+        Parameters
+        ----------
+        rate_type : str
+            The type of production rate to plot. Supported values are:
+            - "basic": Plot the estimated production rates.
+            - "normalised": Plot the normalised production rates.
+            - "specific": Plot the volume-specific production rates.
+        figsize : Tuple[float, float], optional
+            Size of the figure to create. Default is (10.0, 6.0).
+
+        Returns
+        -------
+        Figure
+            A matplotlib Figure object containing the plot.
         """
-        fig, ax = plt.subplots(figsize=figsize, layout="constrained")
-        # Plot the aligned cycle data.
-        for cycle_id in self.cell_cycles:
-            ax.plot(
-                self.aligned_cycle_data.loc[cycle_id, "Standard coordinate"],
-                self.aligned_cycle_data.loc[cycle_id, "Specific production rate"],
-                marker="o",
-                linestyle="none",
-                color="grey",
-                alpha=0.5
-            )
         # Calculate the mean and standard deviation from the Gaussian process model.
+        # Do this first to ensure to raise an error as soon as possible if the
+        # Gaussian process model has not been fitted.
         standard_coordinate_anchors = tuple(self.standard_coordinate_anchors.values())
         gp_time = np.linspace(
             standard_coordinate_anchors[0],
             standard_coordinate_anchors[-1],
             100
         )
-        gp_mean, gp_std = self.specific_production_rate_gp.predict(
-            gp_time[:, np.newaxis], return_std=True
-        )
-        # Compensate for the centering performed before fitting.
-        gp_mean += self.aligned_cycle_data["Specific production rate"].mean()
 
+        match rate_type.strip().lower():
+            case "basic":
+                gp_mean, gp_std = self.production_rate_gp.predict(
+                    gp_time[:, np.newaxis], return_std=True
+                )
+                column = "Production rate"
+                title = (
+                    f"{self.experiment_id}, {len(self.cell_cycles)} cycles - "
+                    "Production rate"
+                )
+                y_label = "Production rate (a.u. min⁻¹)"
+            case "normalised":
+                gp_mean, gp_std = self.normalised_production_rate_gp.predict(
+                    gp_time[:, np.newaxis], return_std=True
+                )
+                column = "Normalised production rate"
+                title = (
+                    f"{self.experiment_id}, {len(self.cell_cycles)} cycles - "
+                    "Normalised production Rate"
+                )
+                y_label = "Normalised production rate (a.u. min⁻¹)"
+            case "specific":
+                gp_mean, gp_std = self.specific_production_rate_gp.predict(
+                    gp_time[:, np.newaxis], return_std=True
+                )
+                column = "Specific production rate"
+                title = (
+                    f"{self.experiment_id}, {len(self.cell_cycles)} cycles - "
+                    "Volume specific production Rate"
+                )
+                y_label = "Volume specific production rate (a.u. min⁻¹ fL⁻¹)"
+            case _:
+                raise ValueError(
+                    f"Invalid rate_type '{rate_type}'. "
+                    "Valid options are: 'basic', 'normalised', 'specific'."
+                )
+        # Compensate for the scaling and centering performed before fitting.
+        rate_mean = self.aligned_cycle_data[column].mean()
+        gp_mean += 1
+        gp_mean *= rate_mean
+        gp_std *= rate_mean
+        
+        fig, ax = plt.subplots(figsize=figsize, layout="constrained")
+        # Plot the aligned cycle data.
+        for cycle_id in self.cell_cycles:
+            ax.plot(
+                self.aligned_cycle_data.loc[cycle_id, "Standard coordinate"],
+                self.aligned_cycle_data.loc[cycle_id, column],
+                marker="o",
+                linestyle="none",
+                color="grey",
+                alpha=0.5
+            )
         # Plot the Gaussian process mean and standard deviation.
         ax.plot(
             gp_time, 
@@ -2536,11 +2795,8 @@ class FluorescentProteinProductionRateExperiment:
             ax.axvline(anchor, color=color, linestyle=linestyle, label=event_name)
 
         ax.set_xlabel("Standard cell cycle coordinate")
-        ax.set_ylabel("Volume specific production rate (a.u. min⁻¹ fL⁻¹)")
-        ax.set_title(
-            f"{self.experiment_id}, {len(self.cell_cycles)} cycles - "
-            "Volume Specific Production Rate"
-        )
+        ax.set_ylabel(y_label)
+        ax.set_title(title)
         ax.legend(*_deduplicate_legend_items(ax.get_legend_handles_labels()))
         return fig
 
