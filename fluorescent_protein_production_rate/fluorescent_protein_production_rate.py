@@ -2134,17 +2134,25 @@ class FluorescentProteinProductionRateExperiment:
         if cycle_id in self.cell_cycles:
             raise ValueError(f"Cell cycle '{cycle_id}' already exists in experiment")
         
-        # Create and add the CellCycle object.
-        cell_cycle = CellCycle(
-            cycle_id=cycle_id,
-            mother_data=mother_data,
-            previous_bud_data=previous_bud_data,
-            current_bud_data=current_bud_data,
-            cycle_events=cycle_events,
-            cycle_end_event=self.cycle_end_event,
-            min_extra_data_points=self.min_extra_data_points,
-            max_extra_data_points=self.max_extra_data_points
-        )
+        try:
+            # Create and add the CellCycle object.
+            cell_cycle = CellCycle(
+                cycle_id=cycle_id,
+                mother_data=mother_data,
+                previous_bud_data=previous_bud_data,
+                current_bud_data=current_bud_data,
+                cycle_events=cycle_events,
+                cycle_end_event=self.cycle_end_event,
+                min_extra_data_points=self.min_extra_data_points,
+                max_extra_data_points=self.max_extra_data_points
+            )
+        except Exception as e:
+            e.add_note(
+                f"This error occurred while creating CellCycle with "
+                f"cycle_id: {cycle_id} in experiment {self.experiment_id}."
+            )
+            raise e
+        
         self._cell_cycles[cycle_id] = cell_cycle
         return cell_cycle
     
@@ -2175,11 +2183,18 @@ class FluorescentProteinProductionRateExperiment:
         -------
         Self
         """
-        for cycle in self:
-            cycle.merge_cycle_data(
-                image_capture_interval=self.image_capture_interval,
-                max_extra_data_points=self.max_extra_data_points
+        try:
+            for cycle in self:
+                cycle.merge_cycle_data(
+                    image_capture_interval=self.image_capture_interval,
+                    max_extra_data_points=self.max_extra_data_points
+                )
+        except Exception as e:
+            e.add_note(
+                "This error occurred while running merge_cycle_data() for cycle "
+                f"{cycle.cycle_id} in experiment {self.experiment_id}."
             )
+            raise e
         return self
     
     def calculate_abundance(self) -> Self:
@@ -2191,8 +2206,15 @@ class FluorescentProteinProductionRateExperiment:
         -------
         Self
         """
-        for cycle in self:
-            cycle.calculate_abundance()
+        try:
+            for cycle in self:
+                cycle.calculate_abundance()
+        except Exception as e:
+            e.add_note(
+                "This error occurred while running calculate_abundance() for cycle "
+                f"{cycle.cycle_id} in experiment {self.experiment_id}."
+            )
+            raise e
         return self
     
     def calculate_smoothed_abundance(
@@ -2250,20 +2272,27 @@ class FluorescentProteinProductionRateExperiment:
         -------
         Self
         """
-        for cycle in self:
-            cycle.calculate_smoothed_abundance(
-                constant_value,
-                constant_value_bounds,
-                length_scale,
-                length_scale_bounds,
-                alpha,
-                alpha_bounds,
-                noise_level,
-                noise_level_bounds,
-                gp_alpha,
-                n_restarts, 
-                random_seed
+        try:
+            for cycle in self:
+                cycle.calculate_smoothed_abundance(
+                    constant_value,
+                    constant_value_bounds,
+                    length_scale,
+                    length_scale_bounds,
+                    alpha,
+                    alpha_bounds,
+                    noise_level,
+                    noise_level_bounds,
+                    gp_alpha,
+                    n_restarts, 
+                    random_seed
+                )
+        except Exception as e:
+            e.add_note(
+                "This error occurred while running calculate_smoothed_abundance() for "
+                f"cycle {cycle.cycle_id} in experiment {self.experiment_id}."
             )
+            raise e
         return self
     
     def calculate_production_rate(
@@ -2289,8 +2318,15 @@ class FluorescentProteinProductionRateExperiment:
         -------
         Self
         """
-        for cycle in self:
-            cycle.calculate_production_rate(apply_maturation_correction, maturation_time)
+        try:
+            for cycle in self:
+                cycle.calculate_production_rate(apply_maturation_correction, maturation_time)
+        except Exception as e:
+            e.add_note(
+                "This error occurred while running calculate_production_rate() for "
+                f"cycle {cycle.cycle_id} in experiment {self.experiment_id}."
+            )
+            raise e
         return self
     
     def calculate_smoothed_volume(
@@ -2339,18 +2375,25 @@ class FluorescentProteinProductionRateExperiment:
         -------
         Self
         """
-        for cycle in self:
-            cycle.calculate_smoothed_volume(
-                constant_value,
-                constant_value_bounds,
-                length_scale,
-                length_scale_bounds,
-                noise_level,
-                noise_level_bounds,
-                gp_alpha,
-                n_restarts, 
-                random_seed
+        try:
+            for cycle in self:
+                cycle.calculate_smoothed_volume(
+                    constant_value,
+                    constant_value_bounds,
+                    length_scale,
+                    length_scale_bounds,
+                    noise_level,
+                    noise_level_bounds,
+                    gp_alpha,
+                    n_restarts, 
+                    random_seed
+                )
+        except Exception as e:
+            e.add_note(
+                "This error occurred while running calculate_smoothed_volume() for "
+                f"cycle {cycle.cycle_id} in experiment {self.experiment_id}."
             )
+            raise e
         return self
     
     def calculate_volume_specific_production_rate(self) -> Self:
@@ -2362,8 +2405,16 @@ class FluorescentProteinProductionRateExperiment:
         -------
         Self
         """
-        for cycle in self.cell_cycles.values():
-            cycle.calculate_volume_specific_production_rate()
+        try:
+            for cycle in self.cell_cycles.values():
+                cycle.calculate_volume_specific_production_rate()
+        except Exception as e:
+            e.add_note(
+                "This error occurred while running "
+                f"calculate_volume_specific_production_rate() for cycle "
+                f"{cycle.cycle_id} in experiment {self.experiment_id}."
+            )
+            raise e
         return self
     
     def calculate_all_cycle_values(
@@ -2405,15 +2456,21 @@ class FluorescentProteinProductionRateExperiment:
             raise ValueError(
                 "Maturation time must be provided for maturation correction."
             )
-        
-        for cycle in self:
-            cycle.calculate_all_cycle_values(
-                self.image_capture_interval,
-                self.max_extra_data_points,
-                calculate_smoothed_abundance_kwargs,
-                calculate_production_rate_kwargs,
-                calculate_smoothed_volume_kwargs
+        try:
+            for cycle in self:
+                cycle.calculate_all_cycle_values(
+                    self.image_capture_interval,
+                    self.max_extra_data_points,
+                    calculate_smoothed_abundance_kwargs,
+                    calculate_production_rate_kwargs,
+                    calculate_smoothed_volume_kwargs
+                )
+        except Exception as e:
+            e.add_note(
+                "This error occurred while running calculate_all_cycle_values() for "
+                f"cycle {cycle.cycle_id} in experiment {self.experiment_id}."
             )
+            raise e
         return self
     
     def align_to_standard_coordinate(self) -> Self:
@@ -2421,8 +2478,15 @@ class FluorescentProteinProductionRateExperiment:
         Map all cell cycles to standardized cell cycle progression 
         coordinates.
         """
-        for cycle in self:
-            cycle.align_to_standard_coordinate(self.standard_coordinate_anchors)
+        try:
+            for cycle in self:
+                cycle.align_to_standard_coordinate(self.standard_coordinate_anchors)
+        except Exception as e:
+            e.add_note(
+                "This error occurred while running align_to_standard_coordinate() for "
+                f"cycle {cycle.cycle_id} in experiment {self.experiment_id}."
+            )
+            raise e
         return self
     
     def calculate_standard_coordinate_anchors(
