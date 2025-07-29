@@ -4,7 +4,8 @@ import copy
 import hashlib
 import inspect
 from typing import (
-    Any, Self, Dict, Tuple, List, Optional, Iterator, Sequence, Callable
+    Any, Self, Dict, Tuple, List, Optional, Iterator, Sequence, Callable,
+    Union
 )
 from warnings import warn
 
@@ -423,7 +424,7 @@ class CellCycle:
         return self._volume_gp
     
     @property
-    def previous_bud_time_id(self) -> int:
+    def previous_bud_time_id(self) -> Union[int, None]:
         """TimeID of the previous bud event."""
         return self.cycle_events["Bud_0"]
     
