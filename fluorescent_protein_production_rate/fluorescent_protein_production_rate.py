@@ -345,6 +345,79 @@ class CellCycle:
         )
     
     @property
+    def total_surface_area(self) -> np.ndarray:
+        """Total surface area (cell + buds) at each time point."""
+        return self._get_cycle_data_column_or_raise(
+            "Total surface area", 
+            (
+                "Total surface area not calculated. Call merge_data() first and ensure "
+                "that all input data frames have a Surface area column." 
+            )
+        )
+    @property
+    def cell_surface_area(self) -> np.ndarray:
+        """Surface area of the mother cell at each time point."""
+        return self._get_cycle_data_column_or_raise(
+            "Surface area", 
+            (
+                "Cell surface area not available. Call merge_data() first and ensure "
+                "that all input data frames have a Surface area column." 
+            )
+        )
+    
+    @property
+    def previous_bud_surface_area(self) -> np.ndarray:
+        """Surface area of the previous bud at each time point."""
+        return self._get_cycle_data_column_or_raise(
+            "Previous bud volume", 
+            "Previous bud surface area", 
+            (
+                "Previous bud surface area not available. Call merge_data() first and "
+                "ensure that all input data frames have a Surface area column." 
+            )
+        )
+    
+    @property
+    def current_bud_surface_area(self) -> np.ndarray:
+        """Surface area of the current bud at each time point."""
+        return self._get_cycle_data_column_or_raise(
+            "Current bud surface area", 
+            (
+                "Current bud surface area not available. Call merge_data() first and "
+                "ensure that all input data frames have a Surface area column." 
+            )
+        )
+    
+    @property
+    def smoothed_surface_area(self) -> np.ndarray:
+        """Gaussian process smoothed total surface area estimates."""
+        return self._get_cycle_data_column_or_raise(
+            "Smoothed surface area", 
+            "Surface area not smoothed. Call calculate_smoothed_surface_area() first."
+        )
+    
+    @property
+    def surface_area_std(self) -> np.ndarray:
+        """Standard deviation of the smoothed total surface area estimates."""
+        return self._get_cycle_data_column_or_raise(
+            "Surface area std", 
+            "Surface area standard deviation not calculated. "
+            "Call calculate_smoothed_surface_area() first."
+        )
+    
+    @property
+    def surface_area_growth_rate(self) -> np.ndarray:
+        """
+        Surface area growth rate at each time point, calculated as the 
+        derivative of the smoothed total surface area.
+        """
+        return self._get_cycle_data_column_or_raise(
+            "Surface area growth rate", 
+            "Surface area growth rate not calculated. "
+            "Call calculate_surface_area_growth_rate() first."
+        )
+    
+    @property
     def concentration(self) -> np.ndarray:
         """Concentration of the fluorophore."""
         return self._get_cycle_data_column_or_raise(
@@ -481,7 +554,9 @@ class CellCycle:
         This method combines volume data from the mother cell and both 
         buds into a single DataFrame. It handles interpolation of 
         flagged data points, adjusts bud volumes based on cell cycle 
-        events, and calculates time values in minutes from TimeIDs.
+        events, and calculates time values in minutes from TimeIDs. If
+        Surface area columns are present, they are also interpolated
+        and adjusted to calculate a total surface area.
 
         Parameters
         ----------
@@ -507,6 +582,54 @@ class CellCycle:
         points will be clipped before the current cycle if they are
         missing from either the mother or previous bud data.
         """
+        # Check whether Surface area columns are present in the data. Use them if 
+        # present in all three data frames, skip if they're missing from any.
+        input_has_surface_area = np.array(
+            [
+                "Surface area" in self.cell_data.columns,
+                "Surface area" in self.previous_bud_data.columns,
+                "Surface area" in self.current_bud_data.columns
+            ]
+        )
+
+        if input_has_surface_area.all():
+            self._merge_cycle_data_with_volumes_and_surface_area(
+                image_capture_interval, max_extra_data_points
+            )
+        else:
+            if input_has_surface_area.any():
+                warn(
+                    "Surface area data is missing from some input data frames. "
+                    "Surface area will not be used in the merged cycle data.",
+                    MissingDataWarning
+                )
+            self._merge_cycle_data_with_volumes(
+                image_capture_interval, max_extra_data_points
+            )
+        return self
+
+    def _merge_cycle_data_with_volumes(
+            self, image_capture_interval: int, max_extra_data_points: int = 8
+        ) -> None:
+        """
+        Merge the volume data from mother cell and buds into a single 
+        DataFrame. Called when merging cycle data and Surface area is 
+        not available.
+
+        Parameters
+        ----------
+        image_capture_interval : int
+            The interval between image captures, in minutes. Used to 
+            calculate time values.
+        max_extra_data_points : int, optional
+            The maximum number of extra data points to include before 
+            and after the relevant cell cycle time range.
+            Default is 8.
+
+        Returns
+        -------
+        None
+        """
         # Prepare data for merging. Delete any datapoints which should be removed,
         # interpolate any resulting missing values, and then remove the redundant 
         # Interpolate column.
@@ -524,11 +647,11 @@ class CellCycle:
 
         # Combine the data into a single DataFrame.
         merged_data = cell_data.merge(
-            previous_bud_data.rename(columns={"Volume": "Previous bud volume"}),
+            previous_bud_data.rename(columns={"Volume" : "Previous bud volume"}),
             on="TimeID",
             how="left"
         ).merge(
-            current_bud_data.rename(columns={"Volume": "Current bud volume"}),
+            current_bud_data.rename(columns={"Volume" : "Current bud volume"}),
             on="TimeID",
             how="left"
         )
@@ -598,8 +721,160 @@ class CellCycle:
         )
         merged_data["Time"] = (merged_data["TimeID"] - 1) * image_capture_interval
         self._cycle_data = merged_data
-        return self
-    
+
+    def _merge_cycle_data_with_volumes_and_surface_area(
+            self, image_capture_interval: int, max_extra_data_points: int = 8
+        ) -> None:
+        """
+        Merge the volume data from mother cell and buds into a single 
+        DataFrame. Called when merging cycle data and Surface Area is 
+        available in all three input DataFrames.
+
+        Parameters
+        ----------
+        image_capture_interval : int
+            The interval between image captures, in minutes. Used to 
+            calculate time values.
+        max_extra_data_points : int, optional
+            The maximum number of extra data points to include before 
+            and after the relevant cell cycle time range.
+            Default is 8.
+
+        Returns
+        -------
+        None
+        """
+        # Prepare data for merging. Delete any datapoints which should be removed,
+        # interpolate any resulting missing values, and then remove the redundant 
+        # Interpolate column.
+        cell_data = self.cell_data.copy()
+        cell_data.loc[
+            cell_data["Interpolate"], ["Volume", "Surface area", "Concentration"]
+        ] = np.nan
+        cell_data.drop(columns=["Interpolate"], inplace=True)
+
+        previous_bud_data = self.previous_bud_data.copy()
+        previous_bud_data.loc[
+            previous_bud_data["Interpolate"], ["Volume", "Surface area"]
+        ] = np.nan
+        previous_bud_data.drop(columns=["Interpolate"], inplace=True)
+
+        current_bud_data = self.current_bud_data.copy()
+        current_bud_data.loc[
+            current_bud_data["Interpolate"], ["Volume", "Surface area"]
+        ] = np.nan
+        current_bud_data.drop(columns=["Interpolate"], inplace=True)
+
+        # Combine the data into a single DataFrame.
+        merged_data = cell_data.merge(
+            previous_bud_data.rename(
+                    columns={
+                        "Volume" : "Previous bud volume", 
+                        "Surface area" : "Previous bud surface area"
+                    }
+                ),
+            on="TimeID",
+            how="left"
+        ).merge(
+            current_bud_data.rename(
+                columns={
+                    "Volume" : "Current bud volume",
+                    "Surface area" : "Current bud surface area"
+                }
+            ),
+            on="TimeID",
+            how="left"
+        )
+        # Setting the index like this allows for easy access to values with specific
+        # TimeIDs using the .at[] accessor.
+        merged_data.set_index(merged_data["TimeID"].values, inplace=True)
+
+        # Ensure that bud volumes and surface areas are set to 0 up to and including the 
+        # relevant bud events. Skip this for the previous bud if Bud_0 is None.
+        if self.previous_bud_time_id is not None:
+            pre_bud_mask = merged_data["TimeID"] <= self.previous_bud_time_id
+            merged_data.loc[pre_bud_mask, "Previous bud volume"] = 0.0
+            merged_data.loc[pre_bud_mask, "Previous bud surface area"] = 0.0
+
+        pre_bud_mask = merged_data["TimeID"] <= self.current_bud_time_id
+        merged_data.loc[pre_bud_mask, "Current bud volume"] = 0.0
+        merged_data.loc[pre_bud_mask, "Current bud surface area"] = 0.0
+
+        # If Bud_0 is None, remove any time points from the previous cycle where either
+        # previous bud data is missing.
+        if self.previous_bud_time_id is None:
+            mask = (
+                (merged_data["TimeID"] < self.current_bud_time_id)
+                & (merged_data["Previous bud volume"].isna())
+            )
+            merged_data = merged_data.loc[~mask]
+        
+        # Handle any remaining NaN values, particularly the bud volumes and surface areas
+        # from budding up to the first point at which they were tracked.
+        merged_data.interpolate(method="linear", axis="rows", inplace=True)
+
+        # Ensure that bud volumes and surface areas are fixed after the relevant cell 
+        # cycle end point.
+        previous_bud_final_volume = merged_data.at[
+            self.previous_cycle_end_time_id, "Previous bud volume"
+        ]
+        previous_bud_final_surface_area = merged_data.at[
+            self.previous_cycle_end_time_id, "Previous bud surface area"
+        ]
+        post_bud_mask = merged_data["TimeID"] > self.previous_cycle_end_time_id
+        merged_data.loc[post_bud_mask, "Previous bud volume"] = previous_bud_final_volume
+        merged_data.loc[
+            post_bud_mask, "Previous bud surface area"
+        ] = previous_bud_final_surface_area
+
+        current_bud_final_volume = merged_data.at[
+            self.current_cycle_end_time_id, "Current bud volume"
+        ]
+        current_bud_final_surface_area = merged_data.at[
+            self.current_cycle_end_time_id, "Current bud surface area"
+        ]
+        post_bud_mask = merged_data["TimeID"] > self.current_cycle_end_time_id
+        merged_data.loc[post_bud_mask, "Current bud volume"] = current_bud_final_volume
+        merged_data.loc[
+            post_bud_mask, "Current bud surface area"
+        ] = current_bud_final_surface_area
+
+        # Adjust previous bud volumes and surface areas such that correct volumes are 
+        # maintained over the current cell cycle.
+        merged_data["Previous bud volume"] = (
+            merged_data["Previous bud volume"] - previous_bud_final_volume
+        )
+        merged_data["Previous bud surface area"] = (
+            merged_data["Previous bud surface area"] - previous_bud_final_surface_area
+        )
+
+        # Clip unnecessary data points.
+        min_required_time_id = (
+            self.previous_cycle_end_time_id - max_extra_data_points
+        )
+        max_required_time_id = (
+            self.current_cycle_end_time_id + max_extra_data_points
+        )
+        time_id_mask = (
+            (merged_data["TimeID"] >= min_required_time_id)
+            & (merged_data["TimeID"] <= max_required_time_id)
+        )
+        merged_data = merged_data.loc[time_id_mask]
+
+        # Finalise and store the merged data frame.
+        merged_data["Total volume"] = (
+            merged_data["Volume"]
+            + merged_data["Previous bud volume"]
+            + merged_data["Current bud volume"]
+        )
+        merged_data["Total surface area"] = (
+            merged_data["Surface Area"]
+            + merged_data["Previous bud surface area"]
+            + merged_data["Current bud surface area"]
+        )
+        merged_data["Time"] = (merged_data["TimeID"] - 1) * image_capture_interval
+        self._cycle_data = merged_data
+
     def calculate_abundance(self) -> Self:
         """
         Calculate fluorescent protein abundance by multiplying 
@@ -1018,6 +1293,14 @@ class CellCycle:
         volume_growth_rate = np.gradient(self.smoothed_volume, self.time)
         self._cycle_data["Volume growth rate"] = volume_growth_rate
         return self
+    
+    def calculate_smoothed_surface_area(self) -> Self:
+        """Not Implemented"""
+        raise NotImplementedError()
+    
+    def calculate_surface_area_growth_rate(self) -> Self:
+        """Not Implemented"""
+        raise NotImplementedError()
 
     # Plotting methods for visualization and validation. Users should use the .plot()
     # method. The other methods starting with "_" are intended for internal use.
