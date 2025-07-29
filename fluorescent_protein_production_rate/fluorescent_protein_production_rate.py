@@ -333,6 +333,18 @@ class CellCycle:
         )
     
     @property
+    def volume_growth_rate(self) -> np.ndarray:
+        """
+        Volume growth rate at each time point, calculated as the 
+        derivative of the smoothed total volume.
+        """
+        return self._get_cycle_data_column_or_raise(
+            "Volume growth rate", 
+            "Volume growth rate not calculated. "
+            "Call calculate_volume_growth_rate() first."
+        )
+    
+    @property
     def concentration(self) -> np.ndarray:
         """Concentration of the fluorophore."""
         return self._get_cycle_data_column_or_raise(
@@ -995,6 +1007,17 @@ class CellCycle:
         self._cycle_data["Standard coordinate"] = standard_coordinates
         return self
     
+
+    # Additional analysis methods that are not part of the standard protein production 
+    # rate pipeline.
+    def calculate_volume_growth_rate(self) -> Self:
+        """
+        Calculate the volume growth rate of the cell based on the 
+        smoothed total volume.
+        """
+        volume_growth_rate = np.gradient(self.smoothed_volume, self.time)
+        self._cycle_data["Volume growth rate"] = volume_growth_rate
+        return self
 
     # Plotting methods for visualization and validation. Users should use the .plot()
     # method. The other methods starting with "_" are intended for internal use.
