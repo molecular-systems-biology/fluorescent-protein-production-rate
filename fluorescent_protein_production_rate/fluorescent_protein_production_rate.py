@@ -317,7 +317,7 @@ class CellCycle:
     
     @property
     def smoothed_volume(self) -> np.ndarray:
-        """Gaussian process smoothed volume estimates."""
+        """Gaussian process smoothed total volume estimates."""
         return self._get_cycle_data_column_or_raise(
             "Smoothed volume", 
             "Volume not smoothed. Call calculate_smoothed_volume() first."
@@ -325,7 +325,7 @@ class CellCycle:
     
     @property
     def volume_std(self) -> np.ndarray:
-        """Standard deviation of the smoothed volume estimates."""
+        """Standard deviation of the smoothed total volume estimates."""
         return self._get_cycle_data_column_or_raise(
             "Volume std", 
             "Volume standard deviation not calculated. "
@@ -427,7 +427,7 @@ class CellCycle:
     
     @property
     def volume_gp(self) -> GaussianProcessRegressor:
-        """GaussianProcessRegressor for smoothed volume."""
+        """GaussianProcessRegressor for smoothed total volume."""
         if self._volume_gp is None:
             raise ValueError(
                 "Volume Gaussian process not fitted. "
@@ -825,9 +825,9 @@ class CellCycle:
         Returns
         -------
         Self
-            The instance of the class with updated smoothed volume data
-            stored in the cycle data. The GaussianProcessRegressor model
-            is also stored.
+            The instance of the class with updated smoothed total volume
+            data stored in the cycle data. The GaussianProcessRegressor 
+            model is also stored.
         """
         # Perform smoothing using a composite Gaussian process kernel. The Constant
         # kernel captures the overall scale, The RBF kernel captures 
@@ -1102,8 +1102,8 @@ class CellCycle:
             show_events_in_legend = True
         ) -> None:
         """
-        Plot volume data for validation as well as smoothed volumes if 
-        available.
+        Plot volume data for validation as well as smoothed total 
+        volumes if available.
 
         Parameters
         ----------
@@ -1151,9 +1151,9 @@ class CellCycle:
             label="Current bud volume"
         )
 
-        # Plot smoothed volume estimates if they are available. Don't raise an error if
-        # they are not, because plotting the unsmoothed volumes alone may still be 
-        # useful.
+        # Plot smoothed total volume estimates if they are available. Don't raise an 
+        # error if they are not, because plotting the unsmoothed volumes alone may still 
+        # be useful.
         if self._cycle_data_has_column("Smoothed volume"):
             ax.plot(
                 self.time, 
