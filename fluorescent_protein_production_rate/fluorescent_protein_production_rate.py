@@ -378,6 +378,19 @@ class CellCycle:
         )
     
     @property
+    def normalised_production_rate(self) -> np.ndarray:
+        """
+        Normalised fluorescent protein production rate at each time 
+        point, calculated by dividing by the mean production rate for
+        this cycle.
+        """
+        return self._get_cycle_data_column_or_raise(
+            "Normalised production rate", 
+            "Normalised production rate not calculated. "
+            "Call calculate_production_rate() first."
+        )
+    
+    @property
     def specific_production_rate(self) -> np.ndarray:
         """
         Volume-specific fluorescent protein production rate at each time
