@@ -127,6 +127,7 @@ class CellCycle:
         self._cycle_data: Optional[pd.DataFrame] = None
         self._abundance_gp: Optional[GaussianProcessRegressor] = None
         self._volume_gp: Optional[GaussianProcessRegressor] = None
+        self._surface_area_gp: Optional[GaussianProcessRegressor] = None
 
     def __bool__(self) -> bool:
         """
@@ -507,6 +508,16 @@ class CellCycle:
                 "Call calculate_smoothed_volume() first."
             )
         return self._volume_gp
+    
+    @property
+    def surface_area_gp(self) -> GaussianProcessRegressor:
+        """GaussianProcessRegressor for smoothed total surface area."""
+        if self._surface_area_gp is None:
+            raise ValueError(
+                "Surface area Gaussian process not fitted. "
+                "Call calculate_smoothed_surface_area() first."
+            )
+        return self._surface_area_gp
     
     @property
     def previous_bud_time_id(self) -> Union[int, None]:
@@ -1294,13 +1305,93 @@ class CellCycle:
         self._cycle_data["Volume growth rate"] = volume_growth_rate
         return self
     
-    def calculate_smoothed_surface_area(self) -> Self:
-        """Not Implemented"""
-        raise NotImplementedError()
+    def calculate_smoothed_surface_area(
+            self,
+            constant_value: float = 10.0,
+            constant_value_bounds: Tuple[float, float] = (1.0, 1000.0),
+            length_scale: float = 200.0,
+            length_scale_bounds: Tuple[float, float] = (10.0, 1000.0),
+            noise_level: float = 1.0,
+            noise_level_bounds: Tuple[float, float] = (0.01, 100.0),
+            gp_alpha: float = 1e-10,
+            n_restarts: int = 1, 
+            random_seed: int = 42
+        ) -> Self:
+        """
+        Apply Gaussian process smoothing to surface area estimates.
+
+        Parameters
+        ----------
+        constant_value : float, optional
+            Initial value for the constant kernel. Default is 10.0.
+        constant_value_bounds : Tuple[float, float], optional
+            Bounds for the constant kernel value. 
+            Default is (1.0, 1000.0).
+        length_scale : float, optional
+            Initial length scale for the RBF kernel. Default is 200.0.
+        length_scale_bounds : Tuple[float, float], optional
+            Bounds for the RBF kernel length scale. 
+            Default is (10.0, 1000.0).
+        noise_level : float, optional
+            Initial noise level for the White kernel. Default is 1.0.
+        noise_level_bounds : Tuple[float, float], optional
+            Bounds for the White kernel noise level. 
+            Default is (0.01, 100.0).
+        gp_alpha : float, optional
+            Value added to the diagonal of the kernel matrix during 
+            fitting to improve numerical stability. Default is 1e-10.
+        n_restarts : int, optional
+            Number of restarts for the optimizer to find the best kernel
+            parameters. Default is 1.
+        random_seed : int, optional
+            Random seed for reproducibility. Default is 42.
+
+        Returns
+        -------
+        Self
+            The instance of the class with updated smoothed total 
+            surface area data stored in the cycle data. The 
+            GaussianProcessRegressor model is also stored.
+        """
+        # Perform smoothing using a composite Gaussian process kernel. The Constant
+        # kernel captures the overall scale, The RBF kernel captures 
+        # the smooth longer-term dynamic trends, while the White kernel approximates 
+        # short term noise.
+        constant_kernel = ConstantKernel(constant_value, constant_value_bounds)
+        rbf_kernel = RBF(length_scale, length_scale_bounds)
+        white_kernel = WhiteKernel(noise_level, noise_level_bounds)
+        gp_kernel = constant_kernel * rbf_kernel + white_kernel
+        gp_regressor = GaussianProcessRegressor(
+            kernel=gp_kernel,
+            alpha=gp_alpha,
+            n_restarts_optimizer=n_restarts,
+            normalize_y=False,
+            random_state=random_seed
+        )
+
+        gp_time = self.time[:, np.newaxis]
+        gp_surface_area = self.total_surface_area[:, np.newaxis]
+        mean_surface_area = self.total_surface_area.mean()
+        # Subtract center the data around 0 produce better fits. 
+        # Reverse this transformation after fitting.
+        gp_fit = gp_regressor.fit(gp_time, gp_surface_area - mean_surface_area)
+        smooth_surface_area, surface_area_std = gp_fit.predict(gp_time, return_std=True)
+        smooth_surface_area += mean_surface_area
+
+        # Store the Gaussian process model and smoothed surface area in the cycle data.
+        self._surface_area_gp = gp_fit
+        self._cycle_data["Smoothed surface area"] = smooth_surface_area
+        self._cycle_data["Surface area std"] = surface_area_std
+        return self
     
     def calculate_surface_area_growth_rate(self) -> Self:
-        """Not Implemented"""
-        raise NotImplementedError()
+        """
+        Calculate the surface area growth rate of the cell based on the 
+        smoothed total surface area.
+        """
+        surface_area_growth_rate = np.gradient(self.smoothed_surface_area, self.time)
+        self._cycle_data["Surface area growth rate"] = surface_area_growth_rate
+        return self
 
     # Plotting methods for visualization and validation. Users should use the .plot()
     # method. The other methods starting with "_" are intended for internal use.
