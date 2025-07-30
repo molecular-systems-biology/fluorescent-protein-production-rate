@@ -424,6 +424,29 @@ class CellCycle:
         return self._get_cycle_data_column_or_raise(
             "Concentration", "Concentration data not available. Call merge_data() first."
         )
+
+    @property
+    def smoothed_concentration(self) -> np.ndarray:
+        """
+        Fluorescent protein concentration estimates smoothed with a 
+        Gaussian process.
+        """
+        return self._get_cycle_data_column_or_raise(
+            "Smoothed concentration", 
+            "Concentration not smoothed. Call calculate_smoothed_concentration() first."
+        )
+    
+    @property
+    def concentration_std(self) -> np.ndarray:
+        """
+        Standard deviation of the smoothed fluorescent protein 
+        concentration estimates.
+        """
+        return self._get_cycle_data_column_or_raise(
+            "Concentration std", 
+            "Concentration standard deviation not calculated. "
+            "Call calculate_smoothed_concentration() first."
+        )
     
     @property
     def abundance(self) -> np.ndarray:
@@ -1392,6 +1415,101 @@ class CellCycle:
         surface_area_growth_rate = np.gradient(self.smoothed_surface_area, self.time)
         self._cycle_data["Surface area growth rate"] = surface_area_growth_rate
         return self
+
+    def calculate_smoothed_concentration(
+            self, 
+            constant_value: float = 1.0,
+            constant_value_bounds: Tuple[float, float] = (0.1, 10),
+            length_scale: float = 10.0,
+            length_scale_bounds: Tuple[float, float] = (1.0, 200.0),
+            alpha: float = 1.0,
+            alpha_bounds: Tuple[float, float] = (0.1, 1e7),
+            noise_level: float = 0.001,
+            noise_level_bounds: Tuple[float, float] = (1e-4, 1.0),
+            gp_alpha: float = 1e-10,
+            n_restarts: int = 1,
+            random_seed: int = 42
+        ) -> Self:
+        """
+        Apply Gaussian process smoothing to concentration estimates.
+
+        Parameters
+        ----------
+        constant_value : float, optional
+            Initial value for the constant kernel. Default is 1.0.
+        constant_value_bounds : Tuple[float, float], optional
+            Bounds for the constant kernel value. Default is (0.1, 10).
+        length_scale : float, optional
+            Initial length scale for the Rational Quadratic kernel. 
+            Default is 10.0.
+        length_scale_bounds : Tuple[float, float], optional
+            Bounds for the length scale of the Rational Quadratic 
+            kernel. Default is (1.0, 200.0).
+        alpha : float, optional
+            Initial alpha value for the Rational Quadratic kernel, which
+            determines the relative weighting of large-scale and 
+            small-scale variations. Default is 1.0.
+        alpha_bounds : Tuple[float, float], optional
+            Bounds for the alpha parameter of the Rational Quadratic 
+            kernel. Default is (0.1, 1e7).
+        noise_level : float, optional
+            Initial noise level for the White kernel. Default is 0.001.
+        noise_level_bounds : Tuple[float, float], optional
+            Bounds for the noise level of the White kernel. 
+            Default is (1e-4, 1.0).
+        gp_alpha : float, optional
+            Value added to the diagonal of the kernel matrix during 
+            fitting to improve numerical stability. Default is 1e-10.
+        n_restarts : int, optional
+            Number of restarts for the optimizer to find the best kernel
+            parameters. Default is 1.
+        random_seed : int, optional
+            Random seed for reproducibility. Default is 42.
+
+        Returns
+        -------
+        Self
+            The instance of the class with the smoothed abundance
+            estimates and their standard deviation stored in the cycle
+            data. The GaussianProcessRegressor model is also stored.
+        """
+        # This method uses a composite Gaussian process kernel to smooth concentration 
+        # estimates over time. The kernel consists of a Constant kernel to capture 
+        # the overall scale, a Rational Quadratic kernel to model long-term dynamic 
+        # trends, and a White kernel to approximate short-term noise. The smoothed 
+        # abundance and its standard deviation are stored in the cycle data.
+        constant_kernel = ConstantKernel(constant_value, constant_value_bounds)
+        rq_kernel = RationalQuadratic(
+            length_scale, alpha, length_scale_bounds, alpha_bounds
+        )
+        white_kernel = WhiteKernel(noise_level, noise_level_bounds)
+        gp_kernel = constant_kernel * rq_kernel + white_kernel
+        gp_regressor = GaussianProcessRegressor(
+            kernel=gp_kernel,
+            alpha=gp_alpha,
+            n_restarts_optimizer=n_restarts,
+            normalize_y=False,
+            random_state=random_seed
+        )
+
+        gp_time = self.time[:, np.newaxis]
+        gp_concentration = self.concentration[:, np.newaxis]
+        mean_concentration = self.concentration.mean()
+        # Subtract the center and scale data around 0 to produce better fits. Reverse
+        # this transformation after fitting.
+        gp_fit = gp_regressor.fit(gp_time, (gp_concentration / mean_concentration) - 1)
+        smooth_concentration, concentration_std = gp_fit.predict(
+            gp_time, return_std=True
+        )
+        smooth_concentration = (smooth_concentration + 1) * mean_concentration
+        concentration_std = concentration_std * mean_concentration
+
+        # Store the Gaussian process model and smoothed abundance in the cycle data.
+        self._concentration_gp = gp_fit
+        self._cycle_data["Smoothed concentration"] = smooth_concentration
+        self._cycle_data["Concentration std"] = concentration_std
+        return self
+    
 
     # Plotting methods for visualization and validation. Users should use the .plot()
     # method. The other methods starting with "_" are intended for internal use.
