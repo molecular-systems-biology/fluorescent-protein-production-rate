@@ -2461,6 +2461,9 @@ class FluorescentProteinProductionRateExperiment:
         self._production_rate_gp: Optional[GaussianProcessRegressor] = None
         self._normalised_production_rate_gp: Optional[GaussianProcessRegressor] = None
         self._specific_production_rate_gp: Optional[GaussianProcessRegressor] = None
+        self._volume_growth_rate_gp: Optional[GaussianProcessRegressor] = None
+        self._surface_area_growth_rate_gp: Optional[GaussianProcessRegressor] = None
+        self._concentration_gp: Optional[GaussianProcessRegressor] = None
 
     def __bool__(self) -> bool:
         """Check if the experiment has any cell cycles."""
@@ -2605,7 +2608,7 @@ class FluorescentProteinProductionRateExperiment:
         if self._production_rate_gp is None:
             raise ValueError(
                 "Production rate Gaussian process not fitted. "
-                "Call fit_production_rate_gp(rate_type='basic') first."
+                "Call fit_population_gp(gp_type='production_rate') first."
             )
         return self._production_rate_gp
     
@@ -2619,7 +2622,7 @@ class FluorescentProteinProductionRateExperiment:
         if self._normalised_production_rate_gp is None:
             raise ValueError(
                 "Normalised production rate Gaussian process not fitted. "
-                "Call fit_production_rate_gp(rate_type='normalised') first."
+                "Call fit_population_gp(gp_type='normalised_production_rate') first."
             )
         return self._normalised_production_rate_gp
     
@@ -2627,15 +2630,53 @@ class FluorescentProteinProductionRateExperiment:
     def specific_production_rate_gp(self) -> GaussianProcessRegressor:
         """
         Gaussian process model for volume specific production rate.
-        Note that the GP is fitted to mean-scaled and centered 
-        values.
+        Note that the GP is fitted to mean-scaled and centered values.
         """
         if self._specific_production_rate_gp is None:
             raise ValueError(
                 "Volume specific production rate Gaussian process not fitted. "
-                "Call fit_specific_production_rate_gp(rate_type='specific') first."
+                "Call fit_population_gp(gp_type='specific_production_rate') first."
             )
         return self._specific_production_rate_gp
+    
+    @property
+    def volume_growth_rate_gp(self) -> GaussianProcessRegressor:
+        """
+        Gaussian process model for volume growth rate. Note that the GP
+        is fitted to mean-scaled and centered values.
+        """
+        if self._volume_growth_rate_gp is None:
+            raise ValueError(
+                "Volume growth rate Gaussian process not fitted. "
+                "Call fit_population_gp(gp_type='volume_growth_rate') first."
+            )
+        return self._volume_growth_rate_gp
+    
+    @property
+    def surface_area_growth_rate_gp(self) -> GaussianProcessRegressor:
+        """
+        Gaussian process model for surface area growth rate. Note that
+        the GP is fitted to mean-scaled and centered values.
+        """
+        if self._surface_area_growth_rate_gp is None:
+            raise ValueError(
+                "Surface area growth rate Gaussian process not fitted. "
+                "Call fit_population_gp(gp_type='surface_area_growth_rate') first."
+            )
+        return self._surface_area_growth_rate_gp
+    
+    @property
+    def concentration_gp(self) -> GaussianProcessRegressor:
+        """
+        Gaussian process model for concentration. Note that the GP is
+        fitted to mean-scaled and centered values.
+        """
+        if self._concentration_gp is None:
+            raise ValueError(
+                "Concentration Gaussian process not fitted. "
+                "Call fit_population_gp(gp_type='concentration') first."
+            )
+        return self._concentration_gp
     
 
     def add_cell_cycle(
@@ -2726,6 +2767,7 @@ class FluorescentProteinProductionRateExperiment:
 
     # Methods which perform the same operation across all CellCycle instances in
     # the experiment.
+    # First, the main analysis pipeline methods.
     def merge_cycle_data(self) -> Self:
         """
         Merge data for all cell cycles in the experiment individually.
@@ -3040,6 +3082,193 @@ class FluorescentProteinProductionRateExperiment:
             raise e
         return self
     
+    # Additional analysis methods that are not part of the protein production rate
+    # pipeline.
+    def calculate_volume_growth_rate(self) -> Self:
+        """
+        Calculate the volume growth rate for all cell cycles in the 
+        experiment individually.
+
+        Returns
+        -------
+        Self
+        """
+        try:
+            for cycle in self.cell_cycles.values():
+                cycle.calculate_volume_growth_rate()
+        except Exception as e:
+            e.add_note(
+                "This error occurred while running calculate_volume_growth_rate() for "
+                f"cycle {cycle.cycle_id} in experiment {self.experiment_id}."
+            )
+            raise e
+        return self
+
+    def calculate_smoothed_surface_area(
+            self,
+            constant_value: float = 10.0,
+            constant_value_bounds: Tuple[float, float] = (1.0, 1000.0),
+            length_scale: float = 200.0,
+            length_scale_bounds: Tuple[float, float] = (10.0, 1000.0),
+            noise_level: float = 1.0,
+            noise_level_bounds: Tuple[float, float] = (0.01, 100.0),
+            gp_alpha: float = 1e-10,
+            n_restarts: int = 1, 
+            random_seed: int = 42
+        ) -> Self:
+        """
+        Apply Gaussian process smoothing to surface area estimates for
+        all cell cycles in the experiment individually.
+        
+        Parameters
+        ----------
+        constant_value : float, optional
+            Initial value for the constant kernel. Default is 10.0.
+        constant_value_bounds : Tuple[float, float], optional
+            Bounds for the constant kernel value. 
+            Default is (1.0, 1000.0).
+        length_scale : float, optional
+            Initial length scale for the RBF kernel. Default is 200.0.
+        length_scale_bounds : Tuple[float, float], optional
+            Bounds for the RBF kernel length scale. 
+            Default is (10.0, 1000.0).
+        noise_level : float, optional
+            Initial noise level for the White kernel. Default is 1.0.
+        noise_level_bounds : Tuple[float, float], optional
+            Bounds for the White kernel noise level. 
+            Default is (0.01, 100.0).
+        gp_alpha : float, optional
+            Value added to the diagonal of the kernel matrix during 
+            fitting to improve numerical stability. Default is 1e-10.
+        n_restarts : int, optional
+            Number of restarts for the optimizer to find the best kernel
+            parameters. Default is 1.
+        random_seed : int, optional
+            Random seed for reproducibility. Default is 42.
+
+        Returns
+        -------
+        Self
+        """
+        try:
+            for cycle in self.cell_cycles.values():
+                cycle.calculate_smoothed_surface_area(
+                    constant_value,
+                    constant_value_bounds,
+                    length_scale,
+                    length_scale_bounds,
+                    noise_level,
+                    noise_level_bounds,
+                    gp_alpha,
+                    n_restarts, 
+                    random_seed
+                )
+        except Exception as e:
+            e.add_note(
+                "This error occurred while running calculate_smoothed_surface_area() "
+                f"for cycle {cycle.cycle_id} in experiment {self.experiment_id}."
+            )
+            raise e
+        return self
+
+    def calculate_surface_area_growth_rate(self) -> Self:
+        """
+        Calculate the surface area growth rate for all cell cycles in 
+        the experiment individually.
+
+        Returns
+        -------
+        Self
+        """
+        try:
+            for cycle in self.cell_cycles.values():
+                cycle.calculate_surface_area_growth_rate()
+        except Exception as e:
+            e.add_note(
+                "This error occurred while running calculate_surface_area_growth_rate() "
+                f"for cycle {cycle.cycle_id} in experiment {self.experiment_id}."
+            )
+            raise e
+        return self
+    
+    def calculate_smoothed_concentration(
+            self, 
+            constant_value: float = 1.0,
+            constant_value_bounds: Tuple[float, float] = (0.1, 10),
+            length_scale: float = 10.0,
+            length_scale_bounds: Tuple[float, float] = (1.0, 200.0),
+            alpha: float = 1.0,
+            alpha_bounds: Tuple[float, float] = (0.1, 1e7),
+            noise_level: float = 0.001,
+            noise_level_bounds: Tuple[float, float] = (1e-4, 1.0),
+            gp_alpha: float = 1e-10,
+            n_restarts: int = 1,
+            random_seed: int = 42
+        ) -> Self:
+        """
+        Apply Gaussian process smoothing to concentration estimates for 
+        all cell cycles in the experiment individually.
+
+        Parameters
+        ----------
+        constant_value : float, optional
+            Initial value for the constant kernel. Default is 1.0.
+        constant_value_bounds : Tuple[float, float], optional
+            Bounds for the constant kernel value. Default is (0.1, 10).
+        length_scale : float, optional
+            Initial length scale for the Rational Quadratic kernel. 
+            Default is 10.0.
+        length_scale_bounds : Tuple[float, float], optional
+            Bounds for the length scale of the Rational Quadratic 
+            kernel. Default is (1.0, 200.0).
+        alpha : float, optional
+            Initial alpha value for the Rational Quadratic kernel, which
+            determines the relative weighting of large-scale and 
+            small-scale variations. Default is 1.0.
+        alpha_bounds : Tuple[float, float], optional
+            Bounds for the alpha parameter of the Rational Quadratic 
+            kernel. Default is (0.1, 1e7).
+        noise_level : float, optional
+            Initial noise level for the White kernel. Default is 0.001.
+        noise_level_bounds : Tuple[float, float], optional
+            Bounds for the noise level of the White kernel. 
+            Default is (1e-4, 1.0).
+        gp_alpha : float, optional
+            Value added to the diagonal of the kernel matrix during 
+            fitting to improve numerical stability. Default is 1e-10.
+        n_restarts : int, optional
+            Number of restarts for the optimizer to find the best kernel
+            parameters. Default is 1.
+        random_seed : int, optional
+            Random seed for reproducibility. Default is 42.
+        
+        Returns
+        -------
+        Self
+        """
+        try:
+            for cycle in self.cell_cycles.values():
+                cycle.calculate_smoothed_concentration(
+                    constant_value,
+                    constant_value_bounds,
+                    length_scale,
+                    length_scale_bounds,
+                    alpha,
+                    alpha_bounds,
+                    noise_level,
+                    noise_level_bounds,
+                    gp_alpha,
+                    n_restarts, 
+                    random_seed
+                )
+        except Exception as e:
+            e.add_note(
+                "This error occurred while running calculate_smoothed_concentration() "
+                f"for cycle {cycle.cycle_id} in experiment {self.experiment_id}."
+            )
+            raise e
+        return self
+
     def calculate_standard_coordinate_anchors(
             self,
             cell_cycle_anchors: Sequence[str],
@@ -3118,9 +3347,9 @@ class FluorescentProteinProductionRateExperiment:
         self._aligned_cycle_data = pd.concat(aligned_cycle_data)
         return self
     
-    def fit_production_rate_gp(
+    def fit_population_gp(
             self,
-            rate_type: str,
+            gp_type: str,
             constant_value: float = 1.0,
             constant_value_bounds: Tuple[float, float] = (1e-5, 1e5),
             length_scale: float = 0.2,
@@ -3132,21 +3361,27 @@ class FluorescentProteinProductionRateExperiment:
             random_seed: int = 42
         ) -> Self:
         """
-        This method combines production rate data from all analyzed cell
-        cycles and fits a single Gaussian process model to capture the 
-        mean behavior across the standardized cell cycle progression.
+        This method combines data from all analyzed cell cycles and fits
+        a single Gaussian process model to capture the mean behavior 
+        across the standardized cell cycle progression.
 
         Parameters
         ----------
-        rate_type : str, optional
-            The type of production rate to fit. Supported values are:
-            - "basic": Fit a Gaussian process to the estimated
+        gp_type : str, optional
+            The type data to fit the GP to. Supported values are:
+            - "production_rate": Fit a Gaussian process to the estimated
                 production rates.
-            - "normalised": Fit a Gaussian process to the production
-                rates normalised by the mean production rate on a per-
-                cycle basis.
-            - "specific": Fit a Gaussian process to the volume-specific
-                production rates.
+            - "normalised_production_rate": Fit a Gaussian process to 
+                the production rates normalised by the mean production 
+                rate on a per-cycle basis.
+            - "specific_production_rate": Fit a Gaussian process to the 
+                volume-specific production rates.
+            - "volume_growth_rate": Fit a Gaussian process to the
+                smoothed volume growth rates.
+            - "surface_area_growth_rate": Fit a Gaussian process to the
+                smoothed surface area growth rates.
+            - "concentration": Fit a Gaussian process to the smoothed
+                concentration values.
         constant_value : float, optional
             Initial value for the constant kernel. Default is 1.0.
         constant_value_bounds : Tuple[float, float], optional
@@ -3191,57 +3426,83 @@ class FluorescentProteinProductionRateExperiment:
         )
 
         gp_time = self.aligned_cycle_data["Standard coordinate"].values[:, np.newaxis]
-        match rate_type.strip().lower():
-            case "basic":
+        match gp_type.strip().lower():
+            case "production_rate":
                 gp_rate = (
                     self.aligned_cycle_data["Production rate"].values[:, np.newaxis]
                 )
-            case "normalised":
+            case "normalised_production_rate":
                 gp_rate = (
                     self.aligned_cycle_data["Normalised production rate"]
                     .values[:, np.newaxis]
                 )
-            case "specific":
+            case "specific_production_rate":
                 gp_rate = (
                     self.aligned_cycle_data["Specific production rate"]
                     .values[:, np.newaxis]
                 )
+            case "volume_growth_rate":
+                gp_rate = (
+                    self.aligned_cycle_data["Volume growth rate"].values[:, np.newaxis]
+                )
+            case "surface_area_growth_rate":
+                gp_rate = (
+                    self.aligned_cycle_data["Surface area growth rate"]
+                    .values[:, np.newaxis]
+                )
+            case "concentration":
+                gp_rate = (
+                    self.aligned_cycle_data["Concentration"].values[:, np.newaxis]
+                )
             case _:
                 raise ValueError(
-                    f"Invalid rate_type '{rate_type}'. "
-                    "Valid options are: 'basic', 'normalised', 'specific'."
+                    f"Invalid gp_type '{gp_type}'. "
+                    "Valid options are: 'production_rate', 'normalised_production_rate', "
+                    "'specific_production_rate', 'volume_growth_rate', or 'concentration'."
                 )
         mean_rate = gp_rate.mean()
         # Scale and center the data around 0 to produce better fits.
         gp_fit = gp_regressor.fit(gp_time, (gp_rate / mean_rate) - 1)
 
         # Store the Gaussian process model in the experiment.
-        match rate_type.strip().lower():
-            case "basic":
+        match gp_type.strip().lower():
+            case "production_rate":
                 self._production_rate_gp = gp_fit
-            case "normalised":
+            case "normalised_production_rate":
                 self._normalised_production_rate_gp = gp_fit
-            case "specific":
+            case "specific_production_rate":
                 self._specific_production_rate_gp = gp_fit
+            case "volume_growth_rate":
+                self._volume_growth_rate_gp = gp_fit
+            case "surface_area_growth_rate":
+                self._surface_area_growth_rate_gp = gp_fit
+            case "concentration":
+                self._concentration_gp = gp_fit
         return self
 
 
     # Plotting methods.
-    def plot_production_rate(
-            self, rate_type: str, figsize: Tuple[float, float] = (10.0, 6.0)
+    def plot_population_gp(
+            self, gp_type: str, figsize: Tuple[float, float] = (10.0, 6.0)
         ) -> Figure:
         """
-        Plot one of three different production rates across all cell 
-        cycles in the experiment, aligned to a standard cell cycle
-        coordinate system.
+        Plot one of various values across all cell cycles in the 
+        experiment, aligned to a standard cell cycle coordinate system.
 
         Parameters
         ----------
         rate_type : str
-            The type of production rate to plot. Supported values are:
-            - "basic": Plot the estimated production rates.
-            - "normalised": Plot the normalised production rates.
-            - "specific": Plot the volume-specific production rates.
+            The type of values to plot. Supported values are:
+            - "production_rate": Plot the estimated production rates.
+            - "normalised_production_rate": Plot the normalised 
+                production rates.
+            - "specific_production_rate": Plot the volume-specific 
+                production rates.
+            - "volume_growth_rate": Plot the smoothed volume growth
+                rates.
+            - "surface_area_growth_rate": Plot the smoothed surface
+                area growth rates.
+            - "concentration": Plot the smoothed concentration values.
         figsize : Tuple[float, float], optional
             Size of the figure to create. Default is (10.0, 6.0).
 
@@ -3260,8 +3521,8 @@ class FluorescentProteinProductionRateExperiment:
             100
         )
 
-        match rate_type.strip().lower():
-            case "basic":
+        match gp_type.strip().lower():
+            case "production_rate":
                 gp_mean, gp_std = self.production_rate_gp.predict(
                     gp_time[:, np.newaxis], return_std=True
                 )
@@ -3271,7 +3532,7 @@ class FluorescentProteinProductionRateExperiment:
                     "Production rate"
                 )
                 y_label = "Production rate (a.u. min⁻¹)"
-            case "normalised":
+            case "normalised_production_rate":
                 gp_mean, gp_std = self.normalised_production_rate_gp.predict(
                     gp_time[:, np.newaxis], return_std=True
                 )
@@ -3281,7 +3542,7 @@ class FluorescentProteinProductionRateExperiment:
                     "Normalised production Rate"
                 )
                 y_label = "Normalised production rate (a.u. min⁻¹)"
-            case "specific":
+            case "specific_production_rate":
                 gp_mean, gp_std = self.specific_production_rate_gp.predict(
                     gp_time[:, np.newaxis], return_std=True
                 )
@@ -3291,10 +3552,41 @@ class FluorescentProteinProductionRateExperiment:
                     "Volume specific production Rate"
                 )
                 y_label = "Volume specific production rate (a.u. min⁻¹ fL⁻¹)"
+            case "volume_growth_rate":
+                gp_mean, gp_std = self.volume_growth_rate_gp.predict(
+                    gp_time[:, np.newaxis], return_std=True
+                )
+                column = "Volume growth rate"
+                title = (
+                    f"{self.experiment_id}, {len(self.cell_cycles)} cycles - "
+                    "Volume growth rate"
+                )
+                y_label = "Volume growth rate (fL min⁻¹)"
+            case "surface_area_growth_rate":
+                gp_mean, gp_std = self.surface_area_growth_rate_gp.predict(
+                    gp_time[:, np.newaxis], return_std=True
+                )
+                column = "Surface area growth rate"
+                title = (
+                    f"{self.experiment_id}, {len(self.cell_cycles)} cycles - "
+                    "Surface area growth rate"
+                )
+                y_label = "Surface area growth rate (μm² min⁻¹)"
+            case "concentration":
+                gp_mean, gp_std = self.concentration_gp.predict(
+                    gp_time[:, np.newaxis], return_std=True
+                )
+                column = "Concentration"
+                title = (
+                    f"{self.experiment_id}, {len(self.cell_cycles)} cycles - "
+                    "Concentration"
+                )
+                y_label = "Concentration (a.u.)"
             case _:
                 raise ValueError(
-                    f"Invalid rate_type '{rate_type}'. "
-                    "Valid options are: 'basic', 'normalised', 'specific'."
+                    f"Invalid gp_type '{gp_type}'. "
+                    "Valid options are: 'production_rate', 'normalised_production_rate', "
+                    "'specific_production_rate', 'volume_growth_rate', or 'concentration'."
                 )
         # Compensate for the scaling and centering performed before fitting.
         rate_mean = self.aligned_cycle_data[column].mean()
