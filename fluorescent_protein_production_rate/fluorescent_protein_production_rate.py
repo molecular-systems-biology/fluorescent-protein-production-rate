@@ -237,16 +237,38 @@ class CellCycle:
                 "Smoothed abundance"
             )
             output["Production rate"] = self._cycle_data_has_column("Production rate")
+            output["Normalised production rate"] = self._cycle_data_has_column(
+                "Normalised production rate"
+            )
             output["Smoothed volume"] = self._cycle_data_has_column("Smoothed volume")
             output["Specific production rate"] = self._cycle_data_has_column(
                 "Specific production rate"
+            )
+            output["Volume growth rate"] = self._cycle_data_has_column(
+                "Volume growth rate"
+            )
+            output["Surface area"] = self._cycle_data_has_column("Total surface area")
+            output["Smoothed surface area"] = self._cycle_data_has_column(
+                "Smoothed surface area"
+            )
+            output["Surface area growth rate"] = self._cycle_data_has_column(
+                "Surface area growth rate"
+            )
+            output["Smoothed concentration"] = self._cycle_data_has_column(
+                "Smoothed concentration"
             )
         else:
             output["Abundance"] = False
             output["Smoothed abundance"] = False
             output["Production rate"] = False
+            output["Normalised production rate"] = False
             output["Smoothed volume"] = False
             output["Specific production rate"] = False
+            output["Volume growth rate"] = False
+            output["Surface area"] = False
+            output["Smoothed surface area"] = False
+            output["Surface area growth rate"] = False
+            output["Smoothed concentration"] = False
         return str(output)[1:-1]  # Remove the outer braces for cleaner output.
     
 
