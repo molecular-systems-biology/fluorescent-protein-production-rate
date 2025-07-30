@@ -669,8 +669,8 @@ class CellCycle:
         ) -> None:
         """
         Merge the volume data from mother cell and buds into a single 
-        DataFrame. Called when merging cycle data and Surface area is 
-        not available.
+        DataFrame. Called when merging cycle data and only volume
+        (and not surface area) is not available.
 
         Parameters
         ----------
