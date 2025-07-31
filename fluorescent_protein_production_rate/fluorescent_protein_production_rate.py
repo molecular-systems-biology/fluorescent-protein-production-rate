@@ -4,7 +4,8 @@ import copy
 import hashlib
 import inspect
 from typing import (
-    Any, Self, Dict, Tuple, List, Optional, Iterator, Sequence, Callable
+    Any, Self, Dict, Tuple, List, Optional, Iterator, Sequence, Callable,
+    Union
 )
 from warnings import warn
 
@@ -126,6 +127,7 @@ class CellCycle:
         self._cycle_data: Optional[pd.DataFrame] = None
         self._abundance_gp: Optional[GaussianProcessRegressor] = None
         self._volume_gp: Optional[GaussianProcessRegressor] = None
+        self._surface_area_gp: Optional[GaussianProcessRegressor] = None
 
     def __bool__(self) -> bool:
         """
@@ -235,16 +237,38 @@ class CellCycle:
                 "Smoothed abundance"
             )
             output["Production rate"] = self._cycle_data_has_column("Production rate")
+            output["Normalised production rate"] = self._cycle_data_has_column(
+                "Normalised production rate"
+            )
             output["Smoothed volume"] = self._cycle_data_has_column("Smoothed volume")
             output["Specific production rate"] = self._cycle_data_has_column(
                 "Specific production rate"
+            )
+            output["Volume growth rate"] = self._cycle_data_has_column(
+                "Volume growth rate"
+            )
+            output["Surface area"] = self._cycle_data_has_column("Total surface area")
+            output["Smoothed surface area"] = self._cycle_data_has_column(
+                "Smoothed surface area"
+            )
+            output["Surface area growth rate"] = self._cycle_data_has_column(
+                "Surface area growth rate"
+            )
+            output["Smoothed concentration"] = self._cycle_data_has_column(
+                "Smoothed concentration"
             )
         else:
             output["Abundance"] = False
             output["Smoothed abundance"] = False
             output["Production rate"] = False
+            output["Normalised production rate"] = False
             output["Smoothed volume"] = False
             output["Specific production rate"] = False
+            output["Volume growth rate"] = False
+            output["Surface area"] = False
+            output["Smoothed surface area"] = False
+            output["Surface area growth rate"] = False
+            output["Smoothed concentration"] = False
         return str(output)[1:-1]  # Remove the outer braces for cleaner output.
     
 
@@ -316,7 +340,7 @@ class CellCycle:
     
     @property
     def smoothed_volume(self) -> np.ndarray:
-        """Gaussian process smoothed volume estimates."""
+        """Gaussian process smoothed total volume estimates."""
         return self._get_cycle_data_column_or_raise(
             "Smoothed volume", 
             "Volume not smoothed. Call calculate_smoothed_volume() first."
@@ -324,7 +348,7 @@ class CellCycle:
     
     @property
     def volume_std(self) -> np.ndarray:
-        """Standard deviation of the smoothed volume estimates."""
+        """Standard deviation of the smoothed total volume estimates."""
         return self._get_cycle_data_column_or_raise(
             "Volume std", 
             "Volume standard deviation not calculated. "
@@ -332,10 +356,118 @@ class CellCycle:
         )
     
     @property
+    def volume_growth_rate(self) -> np.ndarray:
+        """
+        Volume growth rate at each time point, calculated as the 
+        derivative of the smoothed total volume.
+        """
+        return self._get_cycle_data_column_or_raise(
+            "Volume growth rate", 
+            "Volume growth rate not calculated. "
+            "Call calculate_volume_growth_rate() first."
+        )
+    
+    @property
+    def total_surface_area(self) -> np.ndarray:
+        """Total surface area (cell + buds) at each time point."""
+        return self._get_cycle_data_column_or_raise(
+            "Total surface area", 
+            (
+                "Total surface area not calculated. Call merge_data() first and ensure "
+                "that all input data frames have a Surface area column." 
+            )
+        )
+    @property
+    def cell_surface_area(self) -> np.ndarray:
+        """Surface area of the mother cell at each time point."""
+        return self._get_cycle_data_column_or_raise(
+            "Surface area", 
+            (
+                "Cell surface area not available. Call merge_data() first and ensure "
+                "that all input data frames have a Surface area column." 
+            )
+        )
+    
+    @property
+    def previous_bud_surface_area(self) -> np.ndarray:
+        """Surface area of the previous bud at each time point."""
+        return self._get_cycle_data_column_or_raise(
+            "Previous bud volume", 
+            "Previous bud surface area", 
+            (
+                "Previous bud surface area not available. Call merge_data() first and "
+                "ensure that all input data frames have a Surface area column." 
+            )
+        )
+    
+    @property
+    def current_bud_surface_area(self) -> np.ndarray:
+        """Surface area of the current bud at each time point."""
+        return self._get_cycle_data_column_or_raise(
+            "Current bud surface area", 
+            (
+                "Current bud surface area not available. Call merge_data() first and "
+                "ensure that all input data frames have a Surface area column." 
+            )
+        )
+    
+    @property
+    def smoothed_surface_area(self) -> np.ndarray:
+        """Gaussian process smoothed total surface area estimates."""
+        return self._get_cycle_data_column_or_raise(
+            "Smoothed surface area", 
+            "Surface area not smoothed. Call calculate_smoothed_surface_area() first."
+        )
+    
+    @property
+    def surface_area_std(self) -> np.ndarray:
+        """Standard deviation of the smoothed total surface area estimates."""
+        return self._get_cycle_data_column_or_raise(
+            "Surface area std", 
+            "Surface area standard deviation not calculated. "
+            "Call calculate_smoothed_surface_area() first."
+        )
+    
+    @property
+    def surface_area_growth_rate(self) -> np.ndarray:
+        """
+        Surface area growth rate at each time point, calculated as the 
+        derivative of the smoothed total surface area.
+        """
+        return self._get_cycle_data_column_or_raise(
+            "Surface area growth rate", 
+            "Surface area growth rate not calculated. "
+            "Call calculate_surface_area_growth_rate() first."
+        )
+    
+    @property
     def concentration(self) -> np.ndarray:
         """Concentration of the fluorophore."""
         return self._get_cycle_data_column_or_raise(
             "Concentration", "Concentration data not available. Call merge_data() first."
+        )
+
+    @property
+    def smoothed_concentration(self) -> np.ndarray:
+        """
+        Fluorescent protein concentration estimates smoothed with a 
+        Gaussian process.
+        """
+        return self._get_cycle_data_column_or_raise(
+            "Smoothed concentration", 
+            "Concentration not smoothed. Call calculate_smoothed_concentration() first."
+        )
+    
+    @property
+    def concentration_std(self) -> np.ndarray:
+        """
+        Standard deviation of the smoothed fluorescent protein 
+        concentration estimates.
+        """
+        return self._get_cycle_data_column_or_raise(
+            "Concentration std", 
+            "Concentration standard deviation not calculated. "
+            "Call calculate_smoothed_concentration() first."
         )
     
     @property
@@ -378,6 +510,19 @@ class CellCycle:
         )
     
     @property
+    def normalised_production_rate(self) -> np.ndarray:
+        """
+        Normalised fluorescent protein production rate at each time 
+        point, calculated by dividing by the mean production rate for
+        this cycle.
+        """
+        return self._get_cycle_data_column_or_raise(
+            "Normalised production rate", 
+            "Normalised production rate not calculated. "
+            "Call calculate_production_rate() first."
+        )
+    
+    @property
     def specific_production_rate(self) -> np.ndarray:
         """
         Volume-specific fluorescent protein production rate at each time
@@ -401,7 +546,7 @@ class CellCycle:
     
     @property
     def volume_gp(self) -> GaussianProcessRegressor:
-        """GaussianProcessRegressor for smoothed volume."""
+        """GaussianProcessRegressor for smoothed total volume."""
         if self._volume_gp is None:
             raise ValueError(
                 "Volume Gaussian process not fitted. "
@@ -410,7 +555,17 @@ class CellCycle:
         return self._volume_gp
     
     @property
-    def previous_bud_time_id(self) -> int:
+    def surface_area_gp(self) -> GaussianProcessRegressor:
+        """GaussianProcessRegressor for smoothed total surface area."""
+        if self._surface_area_gp is None:
+            raise ValueError(
+                "Surface area Gaussian process not fitted. "
+                "Call calculate_smoothed_surface_area() first."
+            )
+        return self._surface_area_gp
+    
+    @property
+    def previous_bud_time_id(self) -> Union[int, None]:
         """TimeID of the previous bud event."""
         return self.cycle_events["Bud_0"]
     
@@ -455,7 +610,9 @@ class CellCycle:
         This method combines volume data from the mother cell and both 
         buds into a single DataFrame. It handles interpolation of 
         flagged data points, adjusts bud volumes based on cell cycle 
-        events, and calculates time values in minutes from TimeIDs.
+        events, and calculates time values in minutes from TimeIDs. If
+        Surface area columns are present, they are also interpolated
+        and adjusted to calculate a total surface area.
 
         Parameters
         ----------
@@ -481,6 +638,54 @@ class CellCycle:
         points will be clipped before the current cycle if they are
         missing from either the mother or previous bud data.
         """
+        # Check whether Surface area columns are present in the data. Use them if 
+        # present in all three data frames, skip if they're missing from any.
+        input_has_surface_area = np.array(
+            [
+                "Surface area" in self.cell_data.columns,
+                "Surface area" in self.previous_bud_data.columns,
+                "Surface area" in self.current_bud_data.columns
+            ]
+        )
+
+        if input_has_surface_area.all():
+            self._merge_cycle_data_with_volumes_and_surface_area(
+                image_capture_interval, max_extra_data_points
+            )
+        else:
+            if input_has_surface_area.any():
+                warn(
+                    "Surface area data is missing from some input data frames. "
+                    "Surface area will not be used in the merged cycle data.",
+                    MissingDataWarning
+                )
+            self._merge_cycle_data_with_volumes(
+                image_capture_interval, max_extra_data_points
+            )
+        return self
+
+    def _merge_cycle_data_with_volumes(
+            self, image_capture_interval: int, max_extra_data_points: int = 8
+        ) -> None:
+        """
+        Merge the volume data from mother cell and buds into a single 
+        DataFrame. Called when merging cycle data and only volume
+        (and not surface area) is not available.
+
+        Parameters
+        ----------
+        image_capture_interval : int
+            The interval between image captures, in minutes. Used to 
+            calculate time values.
+        max_extra_data_points : int, optional
+            The maximum number of extra data points to include before 
+            and after the relevant cell cycle time range.
+            Default is 8.
+
+        Returns
+        -------
+        None
+        """
         # Prepare data for merging. Delete any datapoints which should be removed,
         # interpolate any resulting missing values, and then remove the redundant 
         # Interpolate column.
@@ -498,11 +703,11 @@ class CellCycle:
 
         # Combine the data into a single DataFrame.
         merged_data = cell_data.merge(
-            previous_bud_data.rename(columns={"Volume": "Previous bud volume"}),
+            previous_bud_data.rename(columns={"Volume" : "Previous bud volume"}),
             on="TimeID",
             how="left"
         ).merge(
-            current_bud_data.rename(columns={"Volume": "Current bud volume"}),
+            current_bud_data.rename(columns={"Volume" : "Current bud volume"}),
             on="TimeID",
             how="left"
         )
@@ -572,8 +777,160 @@ class CellCycle:
         )
         merged_data["Time"] = (merged_data["TimeID"] - 1) * image_capture_interval
         self._cycle_data = merged_data
-        return self
-    
+
+    def _merge_cycle_data_with_volumes_and_surface_area(
+            self, image_capture_interval: int, max_extra_data_points: int = 8
+        ) -> None:
+        """
+        Merge the volume data from mother cell and buds into a single 
+        DataFrame. Called when merging cycle data and Surface Area is 
+        available in all three input DataFrames.
+
+        Parameters
+        ----------
+        image_capture_interval : int
+            The interval between image captures, in minutes. Used to 
+            calculate time values.
+        max_extra_data_points : int, optional
+            The maximum number of extra data points to include before 
+            and after the relevant cell cycle time range.
+            Default is 8.
+
+        Returns
+        -------
+        None
+        """
+        # Prepare data for merging. Delete any datapoints which should be removed,
+        # interpolate any resulting missing values, and then remove the redundant 
+        # Interpolate column.
+        cell_data = self.cell_data.copy()
+        cell_data.loc[
+            cell_data["Interpolate"], ["Volume", "Surface area", "Concentration"]
+        ] = np.nan
+        cell_data.drop(columns=["Interpolate"], inplace=True)
+
+        previous_bud_data = self.previous_bud_data.copy()
+        previous_bud_data.loc[
+            previous_bud_data["Interpolate"], ["Volume", "Surface area"]
+        ] = np.nan
+        previous_bud_data.drop(columns=["Interpolate"], inplace=True)
+
+        current_bud_data = self.current_bud_data.copy()
+        current_bud_data.loc[
+            current_bud_data["Interpolate"], ["Volume", "Surface area"]
+        ] = np.nan
+        current_bud_data.drop(columns=["Interpolate"], inplace=True)
+
+        # Combine the data into a single DataFrame.
+        merged_data = cell_data.merge(
+            previous_bud_data.rename(
+                    columns={
+                        "Volume" : "Previous bud volume", 
+                        "Surface area" : "Previous bud surface area"
+                    }
+                ),
+            on="TimeID",
+            how="left"
+        ).merge(
+            current_bud_data.rename(
+                columns={
+                    "Volume" : "Current bud volume",
+                    "Surface area" : "Current bud surface area"
+                }
+            ),
+            on="TimeID",
+            how="left"
+        )
+        # Setting the index like this allows for easy access to values with specific
+        # TimeIDs using the .at[] accessor.
+        merged_data.set_index(merged_data["TimeID"].values, inplace=True)
+
+        # Ensure that bud volumes and surface areas are set to 0 up to and including the 
+        # relevant bud events. Skip this for the previous bud if Bud_0 is None.
+        if self.previous_bud_time_id is not None:
+            pre_bud_mask = merged_data["TimeID"] <= self.previous_bud_time_id
+            merged_data.loc[pre_bud_mask, "Previous bud volume"] = 0.0
+            merged_data.loc[pre_bud_mask, "Previous bud surface area"] = 0.0
+
+        pre_bud_mask = merged_data["TimeID"] <= self.current_bud_time_id
+        merged_data.loc[pre_bud_mask, "Current bud volume"] = 0.0
+        merged_data.loc[pre_bud_mask, "Current bud surface area"] = 0.0
+
+        # If Bud_0 is None, remove any time points from the previous cycle where either
+        # previous bud data is missing.
+        if self.previous_bud_time_id is None:
+            mask = (
+                (merged_data["TimeID"] < self.current_bud_time_id)
+                & (merged_data["Previous bud volume"].isna())
+            )
+            merged_data = merged_data.loc[~mask]
+        
+        # Handle any remaining NaN values, particularly the bud volumes and surface areas
+        # from budding up to the first point at which they were tracked.
+        merged_data.interpolate(method="linear", axis="rows", inplace=True)
+
+        # Ensure that bud volumes and surface areas are fixed after the relevant cell 
+        # cycle end point.
+        previous_bud_final_volume = merged_data.at[
+            self.previous_cycle_end_time_id, "Previous bud volume"
+        ]
+        previous_bud_final_surface_area = merged_data.at[
+            self.previous_cycle_end_time_id, "Previous bud surface area"
+        ]
+        post_bud_mask = merged_data["TimeID"] > self.previous_cycle_end_time_id
+        merged_data.loc[post_bud_mask, "Previous bud volume"] = previous_bud_final_volume
+        merged_data.loc[
+            post_bud_mask, "Previous bud surface area"
+        ] = previous_bud_final_surface_area
+
+        current_bud_final_volume = merged_data.at[
+            self.current_cycle_end_time_id, "Current bud volume"
+        ]
+        current_bud_final_surface_area = merged_data.at[
+            self.current_cycle_end_time_id, "Current bud surface area"
+        ]
+        post_bud_mask = merged_data["TimeID"] > self.current_cycle_end_time_id
+        merged_data.loc[post_bud_mask, "Current bud volume"] = current_bud_final_volume
+        merged_data.loc[
+            post_bud_mask, "Current bud surface area"
+        ] = current_bud_final_surface_area
+
+        # Adjust previous bud volumes and surface areas such that correct volumes are 
+        # maintained over the current cell cycle.
+        merged_data["Previous bud volume"] = (
+            merged_data["Previous bud volume"] - previous_bud_final_volume
+        )
+        merged_data["Previous bud surface area"] = (
+            merged_data["Previous bud surface area"] - previous_bud_final_surface_area
+        )
+
+        # Clip unnecessary data points.
+        min_required_time_id = (
+            self.previous_cycle_end_time_id - max_extra_data_points
+        )
+        max_required_time_id = (
+            self.current_cycle_end_time_id + max_extra_data_points
+        )
+        time_id_mask = (
+            (merged_data["TimeID"] >= min_required_time_id)
+            & (merged_data["TimeID"] <= max_required_time_id)
+        )
+        merged_data = merged_data.loc[time_id_mask]
+
+        # Finalise and store the merged data frame.
+        merged_data["Total volume"] = (
+            merged_data["Volume"]
+            + merged_data["Previous bud volume"]
+            + merged_data["Current bud volume"]
+        )
+        merged_data["Total surface area"] = (
+            merged_data["Surface Area"]
+            + merged_data["Previous bud surface area"]
+            + merged_data["Current bud surface area"]
+        )
+        merged_data["Time"] = (merged_data["TimeID"] - 1) * image_capture_interval
+        self._cycle_data = merged_data
+
     def calculate_abundance(self) -> Self:
         """
         Calculate fluorescent protein abundance by multiplying 
@@ -799,9 +1156,9 @@ class CellCycle:
         Returns
         -------
         Self
-            The instance of the class with updated smoothed volume data
-            stored in the cycle data. The GaussianProcessRegressor model
-            is also stored.
+            The instance of the class with updated smoothed total volume
+            data stored in the cycle data. The GaussianProcessRegressor 
+            model is also stored.
         """
         # Perform smoothing using a composite Gaussian process kernel. The Constant
         # kernel captures the overall scale, The RBF kernel captures 
@@ -982,6 +1339,200 @@ class CellCycle:
         return self
     
 
+    # Additional analysis methods that are not part of the standard protein production 
+    # rate pipeline.
+    def calculate_volume_growth_rate(self) -> Self:
+        """
+        Calculate the volume growth rate of the cell based on the 
+        smoothed total volume.
+        """
+        volume_growth_rate = np.gradient(self.smoothed_volume, self.time)
+        self._cycle_data["Volume growth rate"] = volume_growth_rate
+        return self
+    
+    def calculate_smoothed_surface_area(
+            self,
+            constant_value: float = 10.0,
+            constant_value_bounds: Tuple[float, float] = (1.0, 1000.0),
+            length_scale: float = 200.0,
+            length_scale_bounds: Tuple[float, float] = (10.0, 1000.0),
+            noise_level: float = 1.0,
+            noise_level_bounds: Tuple[float, float] = (0.01, 100.0),
+            gp_alpha: float = 1e-10,
+            n_restarts: int = 1, 
+            random_seed: int = 42
+        ) -> Self:
+        """
+        Apply Gaussian process smoothing to surface area estimates.
+
+        Parameters
+        ----------
+        constant_value : float, optional
+            Initial value for the constant kernel. Default is 10.0.
+        constant_value_bounds : Tuple[float, float], optional
+            Bounds for the constant kernel value. 
+            Default is (1.0, 1000.0).
+        length_scale : float, optional
+            Initial length scale for the RBF kernel. Default is 200.0.
+        length_scale_bounds : Tuple[float, float], optional
+            Bounds for the RBF kernel length scale. 
+            Default is (10.0, 1000.0).
+        noise_level : float, optional
+            Initial noise level for the White kernel. Default is 1.0.
+        noise_level_bounds : Tuple[float, float], optional
+            Bounds for the White kernel noise level. 
+            Default is (0.01, 100.0).
+        gp_alpha : float, optional
+            Value added to the diagonal of the kernel matrix during 
+            fitting to improve numerical stability. Default is 1e-10.
+        n_restarts : int, optional
+            Number of restarts for the optimizer to find the best kernel
+            parameters. Default is 1.
+        random_seed : int, optional
+            Random seed for reproducibility. Default is 42.
+
+        Returns
+        -------
+        Self
+            The instance of the class with updated smoothed total 
+            surface area data stored in the cycle data. The 
+            GaussianProcessRegressor model is also stored.
+        """
+        # Perform smoothing using a composite Gaussian process kernel. The Constant
+        # kernel captures the overall scale, The RBF kernel captures 
+        # the smooth longer-term dynamic trends, while the White kernel approximates 
+        # short term noise.
+        constant_kernel = ConstantKernel(constant_value, constant_value_bounds)
+        rbf_kernel = RBF(length_scale, length_scale_bounds)
+        white_kernel = WhiteKernel(noise_level, noise_level_bounds)
+        gp_kernel = constant_kernel * rbf_kernel + white_kernel
+        gp_regressor = GaussianProcessRegressor(
+            kernel=gp_kernel,
+            alpha=gp_alpha,
+            n_restarts_optimizer=n_restarts,
+            normalize_y=False,
+            random_state=random_seed
+        )
+
+        gp_time = self.time[:, np.newaxis]
+        gp_surface_area = self.total_surface_area[:, np.newaxis]
+        mean_surface_area = self.total_surface_area.mean()
+        # Subtract center the data around 0 produce better fits. 
+        # Reverse this transformation after fitting.
+        gp_fit = gp_regressor.fit(gp_time, gp_surface_area - mean_surface_area)
+        smooth_surface_area, surface_area_std = gp_fit.predict(gp_time, return_std=True)
+        smooth_surface_area += mean_surface_area
+
+        # Store the Gaussian process model and smoothed surface area in the cycle data.
+        self._surface_area_gp = gp_fit
+        self._cycle_data["Smoothed surface area"] = smooth_surface_area
+        self._cycle_data["Surface area std"] = surface_area_std
+        return self
+    
+    def calculate_surface_area_growth_rate(self) -> Self:
+        """
+        Calculate the surface area growth rate of the cell based on the 
+        smoothed total surface area.
+        """
+        surface_area_growth_rate = np.gradient(self.smoothed_surface_area, self.time)
+        self._cycle_data["Surface area growth rate"] = surface_area_growth_rate
+        return self
+
+    def calculate_smoothed_concentration(
+            self, 
+            constant_value: float = 1.0,
+            constant_value_bounds: Tuple[float, float] = (0.1, 10),
+            length_scale: float = 10.0,
+            length_scale_bounds: Tuple[float, float] = (1.0, 200.0),
+            alpha: float = 1.0,
+            alpha_bounds: Tuple[float, float] = (0.1, 1e7),
+            noise_level: float = 0.001,
+            noise_level_bounds: Tuple[float, float] = (1e-4, 1.0),
+            gp_alpha: float = 1e-10,
+            n_restarts: int = 1,
+            random_seed: int = 42
+        ) -> Self:
+        """
+        Apply Gaussian process smoothing to concentration estimates.
+
+        Parameters
+        ----------
+        constant_value : float, optional
+            Initial value for the constant kernel. Default is 1.0.
+        constant_value_bounds : Tuple[float, float], optional
+            Bounds for the constant kernel value. Default is (0.1, 10).
+        length_scale : float, optional
+            Initial length scale for the Rational Quadratic kernel. 
+            Default is 10.0.
+        length_scale_bounds : Tuple[float, float], optional
+            Bounds for the length scale of the Rational Quadratic 
+            kernel. Default is (1.0, 200.0).
+        alpha : float, optional
+            Initial alpha value for the Rational Quadratic kernel, which
+            determines the relative weighting of large-scale and 
+            small-scale variations. Default is 1.0.
+        alpha_bounds : Tuple[float, float], optional
+            Bounds for the alpha parameter of the Rational Quadratic 
+            kernel. Default is (0.1, 1e7).
+        noise_level : float, optional
+            Initial noise level for the White kernel. Default is 0.001.
+        noise_level_bounds : Tuple[float, float], optional
+            Bounds for the noise level of the White kernel. 
+            Default is (1e-4, 1.0).
+        gp_alpha : float, optional
+            Value added to the diagonal of the kernel matrix during 
+            fitting to improve numerical stability. Default is 1e-10.
+        n_restarts : int, optional
+            Number of restarts for the optimizer to find the best kernel
+            parameters. Default is 1.
+        random_seed : int, optional
+            Random seed for reproducibility. Default is 42.
+
+        Returns
+        -------
+        Self
+            The instance of the class with the smoothed abundance
+            estimates and their standard deviation stored in the cycle
+            data. The GaussianProcessRegressor model is also stored.
+        """
+        # This method uses a composite Gaussian process kernel to smooth concentration 
+        # estimates over time. The kernel consists of a Constant kernel to capture 
+        # the overall scale, a Rational Quadratic kernel to model long-term dynamic 
+        # trends, and a White kernel to approximate short-term noise. The smoothed 
+        # abundance and its standard deviation are stored in the cycle data.
+        constant_kernel = ConstantKernel(constant_value, constant_value_bounds)
+        rq_kernel = RationalQuadratic(
+            length_scale, alpha, length_scale_bounds, alpha_bounds
+        )
+        white_kernel = WhiteKernel(noise_level, noise_level_bounds)
+        gp_kernel = constant_kernel * rq_kernel + white_kernel
+        gp_regressor = GaussianProcessRegressor(
+            kernel=gp_kernel,
+            alpha=gp_alpha,
+            n_restarts_optimizer=n_restarts,
+            normalize_y=False,
+            random_state=random_seed
+        )
+
+        gp_time = self.time[:, np.newaxis]
+        gp_concentration = self.concentration[:, np.newaxis]
+        mean_concentration = self.concentration.mean()
+        # Subtract the center and scale data around 0 to produce better fits. Reverse
+        # this transformation after fitting.
+        gp_fit = gp_regressor.fit(gp_time, (gp_concentration / mean_concentration) - 1)
+        smooth_concentration, concentration_std = gp_fit.predict(
+            gp_time, return_std=True
+        )
+        smooth_concentration = (smooth_concentration + 1) * mean_concentration
+        concentration_std = concentration_std * mean_concentration
+
+        # Store the Gaussian process model and smoothed abundance in the cycle data.
+        self._concentration_gp = gp_fit
+        self._cycle_data["Smoothed concentration"] = smooth_concentration
+        self._cycle_data["Concentration std"] = concentration_std
+        return self
+    
+
     # Plotting methods for visualization and validation. Users should use the .plot()
     # method. The other methods starting with "_" are intended for internal use.
     def plot(
@@ -1004,6 +1555,10 @@ class CellCycle:
             - "abundance": Plots the abundance data.
             - "production rate": Plots the production rate data.
             - "overview": Provides an overview plot of all data.
+            - "surface area": Plots the surface area data.
+            - "surface area growth rate": Plots the surface area growth
+                rate data.
+            - "volume growth rate": Plots the volume growth rate data.
         figsize : Tuple[float, float], optional
             The size of the figure in inches. If None, uses (10.0, 6.0)
             for all plot types other than "overview" which instead uses
@@ -1047,11 +1602,21 @@ class CellCycle:
             case "overview":
                 plot_func = self._plot_overview
                 figsize = (20.0, 12.0) if figsize is None else figsize
+            case "surface area":
+                plot_func = self._plot_surface_area
+                figsize = (10.0, 6.0) if figsize is None else figsize
+            case "surface area growth rate":
+                plot_func = self._plot_surface_area_growth_rate
+                figsize = (10.0, 6.0) if figsize is None else figsize
+            case "volume growth rate":
+                plot_func = self._plot_volume_growth_rate
+                figsize = (10.0, 6.0) if figsize is None else figsize
             case _:
                 raise ValueError(
                     f"Unknown plot type '{plot_type}'. "
                     "Valid options are: 'Volume', 'Concentration', 'Abundance', "
-                    "'Production Rate', 'Overview'."
+                    "'Production Rate', 'Overview', 'Surface Area', "
+                    "'Surface Area Growth Rate', 'Volume Growth Rate'."
                 )
         fig, ax = plt.subplots(figsize=figsize, layout="constrained")
         plot_func(ax, add_title, show_events, show_events_in_legend)
@@ -1065,8 +1630,8 @@ class CellCycle:
             show_events_in_legend = True
         ) -> None:
         """
-        Plot volume data for validation as well as smoothed volumes if 
-        available.
+        Plot volume data for validation as well as smoothed total 
+        volumes if available.
 
         Parameters
         ----------
@@ -1114,9 +1679,9 @@ class CellCycle:
             label="Current bud volume"
         )
 
-        # Plot smoothed volume estimates if they are available. Don't raise an error if
-        # they are not, because plotting the unsmoothed volumes alone may still be 
-        # useful.
+        # Plot smoothed total volume estimates if they are available. Don't raise an 
+        # error if they are not, because plotting the unsmoothed volumes alone may still 
+        # be useful.
         if self._cycle_data_has_column("Smoothed volume"):
             ax.plot(
                 self.time, 
@@ -1159,7 +1724,8 @@ class CellCycle:
             show_events_in_legend: bool = True
         ) -> None:
         """
-        Plot concentration data for validation.
+        Plot concentration data for validation as well as smoothed
+        concentration if available.
         
         Parameters
         ----------
@@ -1180,8 +1746,26 @@ class CellCycle:
         """
         ax.plot(self.time, self.concentration, marker="x", label="Concentration")
         
-        ax.set_xlabel("Time after imaging start (min)")
-        ax.set_ylabel("Concentration (a.u.)")
+        # Plot smoothed concentration estimates if they are available. Don't raise an
+        # error if they are not because plotting the unsmoothed concentrations alone may
+        # still be useful.
+        if self._cycle_data_has_column("Smoothed concentration"):
+            ax.plot(
+                self.time, 
+                self.smoothed_concentration,
+                color="black",
+                linestyle="-",
+                label="Smoothed concentration"
+            )
+        if self._cycle_data_has_column("Concentration std"):
+            ax.fill_between(
+                self.time,
+                self.smoothed_concentration - self.concentration_std,
+                self.smoothed_concentration + self.concentration_std,
+                color="black", 
+                alpha=0.2, 
+                label="Concentration St.Dev"
+            )
 
         if show_events:
             self._plot_cycle_events(ax)
@@ -1192,7 +1776,9 @@ class CellCycle:
                 ax.legend(legend_items[0][:1], legend_items[1][:1])
         else:
             ax.legend()
-
+        
+        ax.set_xlabel("Time after imaging start (min)")
+        ax.set_ylabel("Concentration (a.u.)")
         if add_title:
             ax.set_title(f"Cell Cycle {self.cycle_id} - Concentration")
     
@@ -1351,6 +1937,205 @@ class CellCycle:
         if add_title:
             ax.set_title(f"Cell Cycle {self.cycle_id} - Production Rate")
 
+    def _plot_volume_growth_rate(
+            self,
+            ax: Axes,
+            add_title: bool = True,
+            show_events: bool = True,
+            show_events_in_legend: bool = True
+        ) -> None:
+        """
+        Plot the volume growth rate data for validation.
+
+        Parameters
+        ----------
+        ax : Axes
+            The matplotlib Axes object to plot on.
+        add_title : bool, optional
+            Whether to add a title to the plot. Default is True.
+        show_events : bool, optional
+            Whether to display cell cycle events on the plot. 
+            Default is True.
+        show_events_in_legend : bool, optional
+            Whether to include cell cycle events in the legend.
+            Default is True.
+
+        Returns
+        -------
+        None
+        
+        """
+        ax.plot(
+            self.time, self.volume_growth_rate, marker="x", label="Volume growth rate"
+        )
+
+        if show_events:
+            self._plot_cycle_events(ax)
+            legend_items = ax.get_legend_handles_labels()
+            if show_events_in_legend:
+                ax.legend(*_deduplicate_legend_items(legend_items))
+            else:
+                ax.legend(legend_items[0][:3], legend_items[1][:3])
+        else:
+            ax.legend()
+        
+        ax.set_xlabel("Time after imaging start (min)")
+        ax.set_ylabel("Volume growth rate (fL min⁻¹)")
+        if add_title:
+            ax.set_title(f"Cell Cycle {self.cycle_id} - Volume Growth Rate")
+
+    def _plot_surface_area(
+            self, 
+            ax: Axes, 
+            add_title: bool = True, 
+            show_events: bool = True,
+            show_events_in_legend = True
+        ) -> None:
+        """
+        Plot surface area data for validation as well as smoothed total 
+        surface area if available.
+
+        Parameters
+        ----------
+        ax : Axes
+            The matplotlib Axes object to plot on.
+        add_title : bool, optional
+            Whether to add a title to the plot. Default is True.
+        show_events : bool, optional
+            Whether to display cell cycle events on the plot. 
+            Default is True.
+        show_events_in_legend : bool, optional
+            Whether to include cell cycle events in the legend.
+            Default is True.
+
+        Returns
+        -------
+        None
+        """
+        ax.plot(
+            self.time, self.total_surface_area, marker="x", label="Total surface area"
+        )
+        ax.plot(
+            self.time, 
+            self.cycle_data["Surface area"], 
+            marker="x", 
+            label="Cell surface area"
+        )
+
+        # Only plot the bud surface areas while the buds are present.
+        previous_bud_mask = self._mask_time_ids_between(
+            self.previous_bud_time_id, self.previous_cycle_end_time_id, "both"
+        )
+        # Compensate for previous bud surface area adjustment to give a more intuitive 
+        # plot.
+        previous_bud_final_surface_area = self.previous_bud_data.loc[
+            self.previous_bud_data["TimeID"] == self.previous_cycle_end_time_id,
+            "Surface area"
+        ].values[0]
+        ax.plot(
+            self.time[previous_bud_mask], 
+            self.previous_bud_volume[previous_bud_mask] + previous_bud_final_surface_area,
+            marker="x",
+            label="Previous bud surface area"
+        )
+
+        current_bud_mask = self._mask_time_ids_between(
+            self.current_bud_time_id, self.current_cycle_end_time_id, "both"
+        )
+        ax.plot(
+            self.time[current_bud_mask], 
+            self.current_bud_surface_area[current_bud_mask], 
+            marker="x", 
+            label="Current bud surface area"
+        )
+
+        # Plot smoothed total surface area etimates if they are available. Don't raise an 
+        # error if they are not, because plotting the unsmoothed values alone may still 
+        # be useful.
+        if self._cycle_data_has_column("Smoothed surface area"):
+            ax.plot(
+                self.time, 
+                self.smoothed_surface_area,
+                color="black",
+                linestyle="-",
+                label="Smoothed surface area"
+            )
+        if self._cycle_data_has_column("Surface area std"):
+            ax.fill_between(
+                self.time,
+                self.smoothed_surface_area - self.surface_area_std,
+                self.smoothed_surface_area + self.surface_area_std,
+                color="black", 
+                alpha=0.2, 
+                label="Surface area St.Dev"
+            )
+        
+        if show_events:
+            self._plot_cycle_events(ax)
+            legend_items = ax.get_legend_handles_labels()
+            if show_events_in_legend:
+                pass
+                ax.legend(*_deduplicate_legend_items(legend_items))
+            else:
+                ax.legend(legend_items[0][:7], legend_items[1][:7])
+        else:
+            ax.legend()
+        
+        ax.set_xlabel("Time after imaging start (min)")
+        ax.set_ylabel("Surface area (μm²)")
+        if add_title:
+            ax.set_title(f"Cell Cycle {self.cycle_id} - Surface Area")
+
+    def _plot_surface_area_growth_rate(
+            self,
+            ax: Axes,
+            add_title: bool = True,
+            show_events: bool = True,
+            show_events_in_legend: bool = True
+        ) -> None:
+        """
+        Plot the surface area growth rate data for validation.
+
+        Parameters
+        ----------
+        ax : Axes
+            The matplotlib Axes object to plot on.
+        add_title : bool, optional
+            Whether to add a title to the plot. Default is True.
+        show_events : bool, optional
+            Whether to display cell cycle events on the plot. 
+            Default is True.
+        show_events_in_legend : bool, optional
+            Whether to include cell cycle events in the legend.
+            Default is True.
+
+        Returns
+        -------
+        None
+        
+        """
+        ax.plot(
+            self.time, 
+            self.surface_area_growth_rate, 
+            marker="x", 
+            label="Surface area growth rate"
+        )
+
+        if show_events:
+            self._plot_cycle_events(ax)
+            legend_items = ax.get_legend_handles_labels()
+            if show_events_in_legend:
+                ax.legend(*_deduplicate_legend_items(legend_items))
+            else:
+                ax.legend(legend_items[0][:3], legend_items[1][:3])
+        else:
+            ax.legend()
+        
+        ax.set_xlabel("Time after imaging start (min)")
+        ax.set_ylabel("Surface area growth rate (μm² min⁻¹)")
+        if add_title:
+            ax.set_title(f"Cell Cycle {self.cycle_id} - Surface Area Growth Rate")
+
     def _plot_overview(
         self, 
         ax: Axes,
@@ -1359,7 +2144,8 @@ class CellCycle:
         show_events_in_legend: bool = True
         ) -> Figure:
         """
-        Plot an overview of all key data for this cell cycle.
+        Plot an overview of all key data relevant to protein production
+        rate calculation for this cell cycle.
 
         Parameters
         ----------
@@ -1910,6 +2696,9 @@ class FluorescentProteinProductionRateExperiment:
         self._production_rate_gp: Optional[GaussianProcessRegressor] = None
         self._normalised_production_rate_gp: Optional[GaussianProcessRegressor] = None
         self._specific_production_rate_gp: Optional[GaussianProcessRegressor] = None
+        self._volume_growth_rate_gp: Optional[GaussianProcessRegressor] = None
+        self._surface_area_growth_rate_gp: Optional[GaussianProcessRegressor] = None
+        self._concentration_gp: Optional[GaussianProcessRegressor] = None
 
     def __bool__(self) -> bool:
         """Check if the experiment has any cell cycles."""
@@ -2054,7 +2843,7 @@ class FluorescentProteinProductionRateExperiment:
         if self._production_rate_gp is None:
             raise ValueError(
                 "Production rate Gaussian process not fitted. "
-                "Call fit_production_rate_gp(rate_type='basic') first."
+                "Call fit_population_gp(gp_type='production_rate') first."
             )
         return self._production_rate_gp
     
@@ -2068,7 +2857,7 @@ class FluorescentProteinProductionRateExperiment:
         if self._normalised_production_rate_gp is None:
             raise ValueError(
                 "Normalised production rate Gaussian process not fitted. "
-                "Call fit_production_rate_gp(rate_type='normalised') first."
+                "Call fit_population_gp(gp_type='normalised_production_rate') first."
             )
         return self._normalised_production_rate_gp
     
@@ -2076,15 +2865,53 @@ class FluorescentProteinProductionRateExperiment:
     def specific_production_rate_gp(self) -> GaussianProcessRegressor:
         """
         Gaussian process model for volume specific production rate.
-        Note that the GP is fitted to mean-scaled and centered 
-        values.
+        Note that the GP is fitted to mean-scaled and centered values.
         """
         if self._specific_production_rate_gp is None:
             raise ValueError(
                 "Volume specific production rate Gaussian process not fitted. "
-                "Call fit_specific_production_rate_gp(rate_type='specific') first."
+                "Call fit_population_gp(gp_type='specific_production_rate') first."
             )
         return self._specific_production_rate_gp
+    
+    @property
+    def volume_growth_rate_gp(self) -> GaussianProcessRegressor:
+        """
+        Gaussian process model for volume growth rate. Note that the GP
+        is fitted to mean-scaled and centered values.
+        """
+        if self._volume_growth_rate_gp is None:
+            raise ValueError(
+                "Volume growth rate Gaussian process not fitted. "
+                "Call fit_population_gp(gp_type='volume_growth_rate') first."
+            )
+        return self._volume_growth_rate_gp
+    
+    @property
+    def surface_area_growth_rate_gp(self) -> GaussianProcessRegressor:
+        """
+        Gaussian process model for surface area growth rate. Note that
+        the GP is fitted to mean-scaled and centered values.
+        """
+        if self._surface_area_growth_rate_gp is None:
+            raise ValueError(
+                "Surface area growth rate Gaussian process not fitted. "
+                "Call fit_population_gp(gp_type='surface_area_growth_rate') first."
+            )
+        return self._surface_area_growth_rate_gp
+    
+    @property
+    def concentration_gp(self) -> GaussianProcessRegressor:
+        """
+        Gaussian process model for concentration. Note that the GP is
+        fitted to mean-scaled and centered values.
+        """
+        if self._concentration_gp is None:
+            raise ValueError(
+                "Concentration Gaussian process not fitted. "
+                "Call fit_population_gp(gp_type='concentration') first."
+            )
+        return self._concentration_gp
     
 
     def add_cell_cycle(
@@ -2175,6 +3002,7 @@ class FluorescentProteinProductionRateExperiment:
 
     # Methods which perform the same operation across all CellCycle instances in
     # the experiment.
+    # First, the main analysis pipeline methods.
     def merge_cycle_data(self) -> Self:
         """
         Merge data for all cell cycles in the experiment individually.
@@ -2489,6 +3317,193 @@ class FluorescentProteinProductionRateExperiment:
             raise e
         return self
     
+    # Additional analysis methods that are not part of the protein production rate
+    # pipeline.
+    def calculate_volume_growth_rate(self) -> Self:
+        """
+        Calculate the volume growth rate for all cell cycles in the 
+        experiment individually.
+
+        Returns
+        -------
+        Self
+        """
+        try:
+            for cycle in self.cell_cycles.values():
+                cycle.calculate_volume_growth_rate()
+        except Exception as e:
+            e.add_note(
+                "This error occurred while running calculate_volume_growth_rate() for "
+                f"cycle {cycle.cycle_id} in experiment {self.experiment_id}."
+            )
+            raise e
+        return self
+
+    def calculate_smoothed_surface_area(
+            self,
+            constant_value: float = 10.0,
+            constant_value_bounds: Tuple[float, float] = (1.0, 1000.0),
+            length_scale: float = 200.0,
+            length_scale_bounds: Tuple[float, float] = (10.0, 1000.0),
+            noise_level: float = 1.0,
+            noise_level_bounds: Tuple[float, float] = (0.01, 100.0),
+            gp_alpha: float = 1e-10,
+            n_restarts: int = 1, 
+            random_seed: int = 42
+        ) -> Self:
+        """
+        Apply Gaussian process smoothing to surface area estimates for
+        all cell cycles in the experiment individually.
+        
+        Parameters
+        ----------
+        constant_value : float, optional
+            Initial value for the constant kernel. Default is 10.0.
+        constant_value_bounds : Tuple[float, float], optional
+            Bounds for the constant kernel value. 
+            Default is (1.0, 1000.0).
+        length_scale : float, optional
+            Initial length scale for the RBF kernel. Default is 200.0.
+        length_scale_bounds : Tuple[float, float], optional
+            Bounds for the RBF kernel length scale. 
+            Default is (10.0, 1000.0).
+        noise_level : float, optional
+            Initial noise level for the White kernel. Default is 1.0.
+        noise_level_bounds : Tuple[float, float], optional
+            Bounds for the White kernel noise level. 
+            Default is (0.01, 100.0).
+        gp_alpha : float, optional
+            Value added to the diagonal of the kernel matrix during 
+            fitting to improve numerical stability. Default is 1e-10.
+        n_restarts : int, optional
+            Number of restarts for the optimizer to find the best kernel
+            parameters. Default is 1.
+        random_seed : int, optional
+            Random seed for reproducibility. Default is 42.
+
+        Returns
+        -------
+        Self
+        """
+        try:
+            for cycle in self.cell_cycles.values():
+                cycle.calculate_smoothed_surface_area(
+                    constant_value,
+                    constant_value_bounds,
+                    length_scale,
+                    length_scale_bounds,
+                    noise_level,
+                    noise_level_bounds,
+                    gp_alpha,
+                    n_restarts, 
+                    random_seed
+                )
+        except Exception as e:
+            e.add_note(
+                "This error occurred while running calculate_smoothed_surface_area() "
+                f"for cycle {cycle.cycle_id} in experiment {self.experiment_id}."
+            )
+            raise e
+        return self
+
+    def calculate_surface_area_growth_rate(self) -> Self:
+        """
+        Calculate the surface area growth rate for all cell cycles in 
+        the experiment individually.
+
+        Returns
+        -------
+        Self
+        """
+        try:
+            for cycle in self.cell_cycles.values():
+                cycle.calculate_surface_area_growth_rate()
+        except Exception as e:
+            e.add_note(
+                "This error occurred while running calculate_surface_area_growth_rate() "
+                f"for cycle {cycle.cycle_id} in experiment {self.experiment_id}."
+            )
+            raise e
+        return self
+    
+    def calculate_smoothed_concentration(
+            self, 
+            constant_value: float = 1.0,
+            constant_value_bounds: Tuple[float, float] = (0.1, 10),
+            length_scale: float = 10.0,
+            length_scale_bounds: Tuple[float, float] = (1.0, 200.0),
+            alpha: float = 1.0,
+            alpha_bounds: Tuple[float, float] = (0.1, 1e7),
+            noise_level: float = 0.001,
+            noise_level_bounds: Tuple[float, float] = (1e-4, 1.0),
+            gp_alpha: float = 1e-10,
+            n_restarts: int = 1,
+            random_seed: int = 42
+        ) -> Self:
+        """
+        Apply Gaussian process smoothing to concentration estimates for 
+        all cell cycles in the experiment individually.
+
+        Parameters
+        ----------
+        constant_value : float, optional
+            Initial value for the constant kernel. Default is 1.0.
+        constant_value_bounds : Tuple[float, float], optional
+            Bounds for the constant kernel value. Default is (0.1, 10).
+        length_scale : float, optional
+            Initial length scale for the Rational Quadratic kernel. 
+            Default is 10.0.
+        length_scale_bounds : Tuple[float, float], optional
+            Bounds for the length scale of the Rational Quadratic 
+            kernel. Default is (1.0, 200.0).
+        alpha : float, optional
+            Initial alpha value for the Rational Quadratic kernel, which
+            determines the relative weighting of large-scale and 
+            small-scale variations. Default is 1.0.
+        alpha_bounds : Tuple[float, float], optional
+            Bounds for the alpha parameter of the Rational Quadratic 
+            kernel. Default is (0.1, 1e7).
+        noise_level : float, optional
+            Initial noise level for the White kernel. Default is 0.001.
+        noise_level_bounds : Tuple[float, float], optional
+            Bounds for the noise level of the White kernel. 
+            Default is (1e-4, 1.0).
+        gp_alpha : float, optional
+            Value added to the diagonal of the kernel matrix during 
+            fitting to improve numerical stability. Default is 1e-10.
+        n_restarts : int, optional
+            Number of restarts for the optimizer to find the best kernel
+            parameters. Default is 1.
+        random_seed : int, optional
+            Random seed for reproducibility. Default is 42.
+        
+        Returns
+        -------
+        Self
+        """
+        try:
+            for cycle in self.cell_cycles.values():
+                cycle.calculate_smoothed_concentration(
+                    constant_value,
+                    constant_value_bounds,
+                    length_scale,
+                    length_scale_bounds,
+                    alpha,
+                    alpha_bounds,
+                    noise_level,
+                    noise_level_bounds,
+                    gp_alpha,
+                    n_restarts, 
+                    random_seed
+                )
+        except Exception as e:
+            e.add_note(
+                "This error occurred while running calculate_smoothed_concentration() "
+                f"for cycle {cycle.cycle_id} in experiment {self.experiment_id}."
+            )
+            raise e
+        return self
+
     def calculate_standard_coordinate_anchors(
             self,
             cell_cycle_anchors: Sequence[str],
@@ -2567,9 +3582,9 @@ class FluorescentProteinProductionRateExperiment:
         self._aligned_cycle_data = pd.concat(aligned_cycle_data)
         return self
     
-    def fit_production_rate_gp(
+    def fit_population_gp(
             self,
-            rate_type: str,
+            gp_type: str,
             constant_value: float = 1.0,
             constant_value_bounds: Tuple[float, float] = (1e-5, 1e5),
             length_scale: float = 0.2,
@@ -2581,21 +3596,27 @@ class FluorescentProteinProductionRateExperiment:
             random_seed: int = 42
         ) -> Self:
         """
-        This method combines production rate data from all analyzed cell
-        cycles and fits a single Gaussian process model to capture the 
-        mean behavior across the standardized cell cycle progression.
+        This method combines data from all analyzed cell cycles and fits
+        a single Gaussian process model to capture the mean behavior 
+        across the standardized cell cycle progression.
 
         Parameters
         ----------
-        rate_type : str, optional
-            The type of production rate to fit. Supported values are:
-            - "basic": Fit a Gaussian process to the estimated
+        gp_type : str, optional
+            The type data to fit the GP to. Supported values are:
+            - "production rate": Fit a Gaussian process to the estimated
                 production rates.
-            - "normalised": Fit a Gaussian process to the production
-                rates normalised by the mean production rate on a per-
-                cycle basis.
-            - "specific": Fit a Gaussian process to the volume-specific
-                production rates.
+            - "normalised production rate": Fit a Gaussian process to 
+                the production rates normalised by the mean production 
+                rate on a per-cycle basis.
+            - "specific production rate": Fit a Gaussian process to the 
+                volume-specific production rates.
+            - "volume growth rate": Fit a Gaussian process to the
+                smoothed volume growth rates.
+            - "surface area growth rate": Fit a Gaussian process to the
+                smoothed surface area growth rates.
+            - "concentration": Fit a Gaussian process to the smoothed
+                concentration values.
         constant_value : float, optional
             Initial value for the constant kernel. Default is 1.0.
         constant_value_bounds : Tuple[float, float], optional
@@ -2640,57 +3661,83 @@ class FluorescentProteinProductionRateExperiment:
         )
 
         gp_time = self.aligned_cycle_data["Standard coordinate"].values[:, np.newaxis]
-        match rate_type.strip().lower():
-            case "basic":
+        match gp_type.strip().lower():
+            case "production rate":
                 gp_rate = (
                     self.aligned_cycle_data["Production rate"].values[:, np.newaxis]
                 )
-            case "normalised":
+            case "normalised production rate":
                 gp_rate = (
                     self.aligned_cycle_data["Normalised production rate"]
                     .values[:, np.newaxis]
                 )
-            case "specific":
+            case "specific production rate":
                 gp_rate = (
                     self.aligned_cycle_data["Specific production rate"]
                     .values[:, np.newaxis]
                 )
+            case "volume growth rate":
+                gp_rate = (
+                    self.aligned_cycle_data["Volume growth rate"].values[:, np.newaxis]
+                )
+            case "surface area growth rate":
+                gp_rate = (
+                    self.aligned_cycle_data["Surface area growth rate"]
+                    .values[:, np.newaxis]
+                )
+            case "concentration":
+                gp_rate = (
+                    self.aligned_cycle_data["Concentration"].values[:, np.newaxis]
+                )
             case _:
                 raise ValueError(
-                    f"Invalid rate_type '{rate_type}'. "
-                    "Valid options are: 'basic', 'normalised', 'specific'."
+                    f"Invalid gp_type '{gp_type}'. "
+                    "Valid options are: 'production rate', 'normalised production rate', "
+                    "'specific production rate', 'volume growth rate', or 'concentration'."
                 )
         mean_rate = gp_rate.mean()
         # Scale and center the data around 0 to produce better fits.
         gp_fit = gp_regressor.fit(gp_time, (gp_rate / mean_rate) - 1)
 
         # Store the Gaussian process model in the experiment.
-        match rate_type.strip().lower():
-            case "basic":
+        match gp_type.strip().lower():
+            case "production rate":
                 self._production_rate_gp = gp_fit
-            case "normalised":
+            case "normalised production rate":
                 self._normalised_production_rate_gp = gp_fit
-            case "specific":
+            case "specific production rate":
                 self._specific_production_rate_gp = gp_fit
+            case "volume growth rate":
+                self._volume_growth_rate_gp = gp_fit
+            case "surface area growth rate":
+                self._surface_area_growth_rate_gp = gp_fit
+            case "concentration":
+                self._concentration_gp = gp_fit
         return self
 
 
     # Plotting methods.
-    def plot_production_rate(
-            self, rate_type: str, figsize: Tuple[float, float] = (10.0, 6.0)
+    def plot_population_gp(
+            self, gp_type: str, figsize: Tuple[float, float] = (10.0, 6.0)
         ) -> Figure:
         """
-        Plot one of three different production rates across all cell 
-        cycles in the experiment, aligned to a standard cell cycle
-        coordinate system.
+        Plot one of various values across all cell cycles in the 
+        experiment, aligned to a standard cell cycle coordinate system.
 
         Parameters
         ----------
-        rate_type : str
-            The type of production rate to plot. Supported values are:
-            - "basic": Plot the estimated production rates.
-            - "normalised": Plot the normalised production rates.
-            - "specific": Plot the volume-specific production rates.
+        gp_type : str
+            The type of values to plot. Supported values are:
+            - "production rate": Plot the estimated production rates.
+            - "normalised production rate": Plot the normalised 
+                production rates.
+            - "specific production rate": Plot the volume-specific 
+                production rates.
+            - "volume growth rate": Plot the smoothed volume growth
+                rates.
+            - "surface area growth rate": Plot the smoothed surface
+                area growth rates.
+            - "concentration": Plot the smoothed concentration values.
         figsize : Tuple[float, float], optional
             Size of the figure to create. Default is (10.0, 6.0).
 
@@ -2709,8 +3756,8 @@ class FluorescentProteinProductionRateExperiment:
             100
         )
 
-        match rate_type.strip().lower():
-            case "basic":
+        match gp_type.strip().lower():
+            case "production rate":
                 gp_mean, gp_std = self.production_rate_gp.predict(
                     gp_time[:, np.newaxis], return_std=True
                 )
@@ -2720,7 +3767,7 @@ class FluorescentProteinProductionRateExperiment:
                     "Production rate"
                 )
                 y_label = "Production rate (a.u. min⁻¹)"
-            case "normalised":
+            case "normalised production rate":
                 gp_mean, gp_std = self.normalised_production_rate_gp.predict(
                     gp_time[:, np.newaxis], return_std=True
                 )
@@ -2730,7 +3777,7 @@ class FluorescentProteinProductionRateExperiment:
                     "Normalised production Rate"
                 )
                 y_label = "Normalised production rate (a.u. min⁻¹)"
-            case "specific":
+            case "specific production rate":
                 gp_mean, gp_std = self.specific_production_rate_gp.predict(
                     gp_time[:, np.newaxis], return_std=True
                 )
@@ -2740,10 +3787,41 @@ class FluorescentProteinProductionRateExperiment:
                     "Volume specific production Rate"
                 )
                 y_label = "Volume specific production rate (a.u. min⁻¹ fL⁻¹)"
+            case "volume growth rate":
+                gp_mean, gp_std = self.volume_growth_rate_gp.predict(
+                    gp_time[:, np.newaxis], return_std=True
+                )
+                column = "Volume growth rate"
+                title = (
+                    f"{self.experiment_id}, {len(self.cell_cycles)} cycles - "
+                    "Volume growth rate"
+                )
+                y_label = "Volume growth rate (fL min⁻¹)"
+            case "surface area growth rate":
+                gp_mean, gp_std = self.surface_area_growth_rate_gp.predict(
+                    gp_time[:, np.newaxis], return_std=True
+                )
+                column = "Surface area growth rate"
+                title = (
+                    f"{self.experiment_id}, {len(self.cell_cycles)} cycles - "
+                    "Surface area growth rate"
+                )
+                y_label = "Surface area growth rate (μm² min⁻¹)"
+            case "concentration":
+                gp_mean, gp_std = self.concentration_gp.predict(
+                    gp_time[:, np.newaxis], return_std=True
+                )
+                column = "Concentration"
+                title = (
+                    f"{self.experiment_id}, {len(self.cell_cycles)} cycles - "
+                    "Concentration"
+                )
+                y_label = "Concentration (a.u.)"
             case _:
                 raise ValueError(
-                    f"Invalid rate_type '{rate_type}'. "
-                    "Valid options are: 'basic', 'normalised', 'specific'."
+                    f"Invalid gp_type '{gp_type}'. "
+                    "Valid options are: 'production rate', 'normalised production rate', "
+                    "'specific production rate', 'volume growth rate', or 'concentration'."
                 )
         # Compensate for the scaling and centering performed before fitting.
         rate_mean = self.aligned_cycle_data[column].mean()
