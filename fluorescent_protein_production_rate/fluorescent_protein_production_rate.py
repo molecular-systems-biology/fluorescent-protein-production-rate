@@ -3604,16 +3604,16 @@ class FluorescentProteinProductionRateExperiment:
         ----------
         gp_type : str, optional
             The type data to fit the GP to. Supported values are:
-            - "production_rate": Fit a Gaussian process to the estimated
+            - "production rate": Fit a Gaussian process to the estimated
                 production rates.
-            - "normalised_production_rate": Fit a Gaussian process to 
+            - "normalised production rate": Fit a Gaussian process to 
                 the production rates normalised by the mean production 
                 rate on a per-cycle basis.
-            - "specific_production_rate": Fit a Gaussian process to the 
+            - "specific production rate": Fit a Gaussian process to the 
                 volume-specific production rates.
-            - "volume_growth_rate": Fit a Gaussian process to the
+            - "volume growth rate": Fit a Gaussian process to the
                 smoothed volume growth rates.
-            - "surface_area_growth_rate": Fit a Gaussian process to the
+            - "surface area growth rate": Fit a Gaussian process to the
                 smoothed surface area growth rates.
             - "concentration": Fit a Gaussian process to the smoothed
                 concentration values.
@@ -3662,25 +3662,25 @@ class FluorescentProteinProductionRateExperiment:
 
         gp_time = self.aligned_cycle_data["Standard coordinate"].values[:, np.newaxis]
         match gp_type.strip().lower():
-            case "production_rate":
+            case "production rate":
                 gp_rate = (
                     self.aligned_cycle_data["Production rate"].values[:, np.newaxis]
                 )
-            case "normalised_production_rate":
+            case "normalised production rate":
                 gp_rate = (
                     self.aligned_cycle_data["Normalised production rate"]
                     .values[:, np.newaxis]
                 )
-            case "specific_production_rate":
+            case "specific production rate":
                 gp_rate = (
                     self.aligned_cycle_data["Specific production rate"]
                     .values[:, np.newaxis]
                 )
-            case "volume_growth_rate":
+            case "volume growth rate":
                 gp_rate = (
                     self.aligned_cycle_data["Volume growth rate"].values[:, np.newaxis]
                 )
-            case "surface_area_growth_rate":
+            case "surface area growth rate":
                 gp_rate = (
                     self.aligned_cycle_data["Surface area growth rate"]
                     .values[:, np.newaxis]
@@ -3692,8 +3692,8 @@ class FluorescentProteinProductionRateExperiment:
             case _:
                 raise ValueError(
                     f"Invalid gp_type '{gp_type}'. "
-                    "Valid options are: 'production_rate', 'normalised_production_rate', "
-                    "'specific_production_rate', 'volume_growth_rate', or 'concentration'."
+                    "Valid options are: 'production rate', 'normalised production rate', "
+                    "'specific production rate', 'volume growth rate', or 'concentration'."
                 )
         mean_rate = gp_rate.mean()
         # Scale and center the data around 0 to produce better fits.
@@ -3701,15 +3701,15 @@ class FluorescentProteinProductionRateExperiment:
 
         # Store the Gaussian process model in the experiment.
         match gp_type.strip().lower():
-            case "production_rate":
+            case "production rate":
                 self._production_rate_gp = gp_fit
-            case "normalised_production_rate":
+            case "normalised production rate":
                 self._normalised_production_rate_gp = gp_fit
-            case "specific_production_rate":
+            case "specific production rate":
                 self._specific_production_rate_gp = gp_fit
-            case "volume_growth_rate":
+            case "volume growth rate":
                 self._volume_growth_rate_gp = gp_fit
-            case "surface_area_growth_rate":
+            case "surface area growth rate":
                 self._surface_area_growth_rate_gp = gp_fit
             case "concentration":
                 self._concentration_gp = gp_fit
@@ -3728,14 +3728,14 @@ class FluorescentProteinProductionRateExperiment:
         ----------
         rate_type : str
             The type of values to plot. Supported values are:
-            - "production_rate": Plot the estimated production rates.
-            - "normalised_production_rate": Plot the normalised 
+            - "production rate": Plot the estimated production rates.
+            - "normalised production rate": Plot the normalised 
                 production rates.
-            - "specific_production_rate": Plot the volume-specific 
+            - "specific production rate": Plot the volume-specific 
                 production rates.
-            - "volume_growth_rate": Plot the smoothed volume growth
+            - "volume growth rate": Plot the smoothed volume growth
                 rates.
-            - "surface_area_growth_rate": Plot the smoothed surface
+            - "surface area growth rate": Plot the smoothed surface
                 area growth rates.
             - "concentration": Plot the smoothed concentration values.
         figsize : Tuple[float, float], optional
@@ -3757,7 +3757,7 @@ class FluorescentProteinProductionRateExperiment:
         )
 
         match gp_type.strip().lower():
-            case "production_rate":
+            case "production rate":
                 gp_mean, gp_std = self.production_rate_gp.predict(
                     gp_time[:, np.newaxis], return_std=True
                 )
@@ -3767,7 +3767,7 @@ class FluorescentProteinProductionRateExperiment:
                     "Production rate"
                 )
                 y_label = "Production rate (a.u. min⁻¹)"
-            case "normalised_production_rate":
+            case "normalised production rate":
                 gp_mean, gp_std = self.normalised_production_rate_gp.predict(
                     gp_time[:, np.newaxis], return_std=True
                 )
@@ -3777,7 +3777,7 @@ class FluorescentProteinProductionRateExperiment:
                     "Normalised production Rate"
                 )
                 y_label = "Normalised production rate (a.u. min⁻¹)"
-            case "specific_production_rate":
+            case "specific production rate":
                 gp_mean, gp_std = self.specific_production_rate_gp.predict(
                     gp_time[:, np.newaxis], return_std=True
                 )
@@ -3787,7 +3787,7 @@ class FluorescentProteinProductionRateExperiment:
                     "Volume specific production Rate"
                 )
                 y_label = "Volume specific production rate (a.u. min⁻¹ fL⁻¹)"
-            case "volume_growth_rate":
+            case "volume growth rate":
                 gp_mean, gp_std = self.volume_growth_rate_gp.predict(
                     gp_time[:, np.newaxis], return_std=True
                 )
@@ -3797,7 +3797,7 @@ class FluorescentProteinProductionRateExperiment:
                     "Volume growth rate"
                 )
                 y_label = "Volume growth rate (fL min⁻¹)"
-            case "surface_area_growth_rate":
+            case "surface area growth rate":
                 gp_mean, gp_std = self.surface_area_growth_rate_gp.predict(
                     gp_time[:, np.newaxis], return_std=True
                 )
@@ -3820,8 +3820,8 @@ class FluorescentProteinProductionRateExperiment:
             case _:
                 raise ValueError(
                     f"Invalid gp_type '{gp_type}'. "
-                    "Valid options are: 'production_rate', 'normalised_production_rate', "
-                    "'specific_production_rate', 'volume_growth_rate', or 'concentration'."
+                    "Valid options are: 'production rate', 'normalised production rate', "
+                    "'specific production rate', 'volume growth rate', or 'concentration'."
                 )
         # Compensate for the scaling and centering performed before fitting.
         rate_mean = self.aligned_cycle_data[column].mean()
