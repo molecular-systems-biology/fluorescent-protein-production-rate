@@ -1555,6 +1555,10 @@ class CellCycle:
             - "abundance": Plots the abundance data.
             - "production rate": Plots the production rate data.
             - "overview": Provides an overview plot of all data.
+            - "surface area": Plots the surface area data.
+            - "surface area growth rate": Plots the surface area growth
+                rate data.
+            - "volume growth rate": Plots the volume growth rate data.
         figsize : Tuple[float, float], optional
             The size of the figure in inches. If None, uses (10.0, 6.0)
             for all plot types other than "overview" which instead uses
@@ -1598,11 +1602,21 @@ class CellCycle:
             case "overview":
                 plot_func = self._plot_overview
                 figsize = (20.0, 12.0) if figsize is None else figsize
+            case "surface area":
+                plot_func = self._plot_surface_area
+                figsize = (10.0, 6.0) if figsize is None else figsize
+            case "surface area growth rate":
+                plot_func = self._plot_surface_area_growth_rate
+                figsize = (10.0, 6.0) if figsize is None else figsize
+            case "volume growth rate":
+                plot_func = self._plot_volume_growth_rate
+                figsize = (10.0, 6.0) if figsize is None else figsize
             case _:
                 raise ValueError(
                     f"Unknown plot type '{plot_type}'. "
                     "Valid options are: 'Volume', 'Concentration', 'Abundance', "
-                    "'Production Rate', 'Overview'."
+                    "'Production Rate', 'Overview', 'Surface Area', "
+                    "'Surface Area Growth Rate', 'Volume Growth Rate'."
                 )
         fig, ax = plt.subplots(figsize=figsize, layout="constrained")
         plot_func(ax, add_title, show_events, show_events_in_legend)
@@ -1710,7 +1724,8 @@ class CellCycle:
             show_events_in_legend: bool = True
         ) -> None:
         """
-        Plot concentration data for validation.
+        Plot concentration data for validation as well as smoothed
+        concentration if available.
         
         Parameters
         ----------
@@ -1731,8 +1746,26 @@ class CellCycle:
         """
         ax.plot(self.time, self.concentration, marker="x", label="Concentration")
         
-        ax.set_xlabel("Time after imaging start (min)")
-        ax.set_ylabel("Concentration (a.u.)")
+        # Plot smoothed concentration estimates if they are available. Don't raise an
+        # error if they are not because plotting the unsmoothed concentrations alone may
+        # still be useful.
+        if self._cycle_data_has_column("Smoothed concentration"):
+            ax.plot(
+                self.time, 
+                self.smoothed_concentration,
+                color="black",
+                linestyle="-",
+                label="Smoothed concentration"
+            )
+        if self._cycle_data_has_column("Concentration std"):
+            ax.fill_between(
+                self.time,
+                self.smoothed_concentration - self.concentration_std,
+                self.smoothed_concentration + self.concentration_std,
+                color="black", 
+                alpha=0.2, 
+                label="Concentration St.Dev"
+            )
 
         if show_events:
             self._plot_cycle_events(ax)
@@ -1743,7 +1776,9 @@ class CellCycle:
                 ax.legend(legend_items[0][:1], legend_items[1][:1])
         else:
             ax.legend()
-
+        
+        ax.set_xlabel("Time after imaging start (min)")
+        ax.set_ylabel("Concentration (a.u.)")
         if add_title:
             ax.set_title(f"Cell Cycle {self.cycle_id} - Concentration")
     
@@ -1902,6 +1937,205 @@ class CellCycle:
         if add_title:
             ax.set_title(f"Cell Cycle {self.cycle_id} - Production Rate")
 
+    def _plot_volume_growth_rate(
+            self,
+            ax: Axes,
+            add_title: bool = True,
+            show_events: bool = True,
+            show_events_in_legend: bool = True
+        ) -> None:
+        """
+        Plot the volume growth rate data for validation.
+
+        Parameters
+        ----------
+        ax : Axes
+            The matplotlib Axes object to plot on.
+        add_title : bool, optional
+            Whether to add a title to the plot. Default is True.
+        show_events : bool, optional
+            Whether to display cell cycle events on the plot. 
+            Default is True.
+        show_events_in_legend : bool, optional
+            Whether to include cell cycle events in the legend.
+            Default is True.
+
+        Returns
+        -------
+        None
+        
+        """
+        ax.plot(
+            self.time, self.volume_growth_rate, marker="x", label="Volume growth rate"
+        )
+
+        if show_events:
+            self._plot_cycle_events(ax)
+            legend_items = ax.get_legend_handles_labels()
+            if show_events_in_legend:
+                ax.legend(*_deduplicate_legend_items(legend_items))
+            else:
+                ax.legend(legend_items[0][:3], legend_items[1][:3])
+        else:
+            ax.legend()
+        
+        ax.set_xlabel("Time after imaging start (min)")
+        ax.set_ylabel("Volume growth rate (fL min⁻¹)")
+        if add_title:
+            ax.set_title(f"Cell Cycle {self.cycle_id} - Volume Growth Rate")
+
+    def _plot_surface_area(
+            self, 
+            ax: Axes, 
+            add_title: bool = True, 
+            show_events: bool = True,
+            show_events_in_legend = True
+        ) -> None:
+        """
+        Plot surface area data for validation as well as smoothed total 
+        surface area if available.
+
+        Parameters
+        ----------
+        ax : Axes
+            The matplotlib Axes object to plot on.
+        add_title : bool, optional
+            Whether to add a title to the plot. Default is True.
+        show_events : bool, optional
+            Whether to display cell cycle events on the plot. 
+            Default is True.
+        show_events_in_legend : bool, optional
+            Whether to include cell cycle events in the legend.
+            Default is True.
+
+        Returns
+        -------
+        None
+        """
+        ax.plot(
+            self.time, self.total_surface_area, marker="x", label="Total surface area"
+        )
+        ax.plot(
+            self.time, 
+            self.cycle_data["Surface area"], 
+            marker="x", 
+            label="Cell surface area"
+        )
+
+        # Only plot the bud surface areas while the buds are present.
+        previous_bud_mask = self._mask_time_ids_between(
+            self.previous_bud_time_id, self.previous_cycle_end_time_id, "both"
+        )
+        # Compensate for previous bud surface area adjustment to give a more intuitive 
+        # plot.
+        previous_bud_final_surface_area = self.previous_bud_data.loc[
+            self.previous_bud_data["TimeID"] == self.previous_cycle_end_time_id,
+            "Surface area"
+        ].values[0]
+        ax.plot(
+            self.time[previous_bud_mask], 
+            self.previous_bud_volume[previous_bud_mask] + previous_bud_final_surface_area,
+            marker="x",
+            label="Previous bud surface area"
+        )
+
+        current_bud_mask = self._mask_time_ids_between(
+            self.current_bud_time_id, self.current_cycle_end_time_id, "both"
+        )
+        ax.plot(
+            self.time[current_bud_mask], 
+            self.current_bud_surface_area[current_bud_mask], 
+            marker="x", 
+            label="Current bud surface area"
+        )
+
+        # Plot smoothed total surface area etimates if they are available. Don't raise an 
+        # error if they are not, because plotting the unsmoothed values alone may still 
+        # be useful.
+        if self._cycle_data_has_column("Smoothed surface area"):
+            ax.plot(
+                self.time, 
+                self.smoothed_surface_area,
+                color="black",
+                linestyle="-",
+                label="Smoothed surface area"
+            )
+        if self._cycle_data_has_column("Surface area std"):
+            ax.fill_between(
+                self.time,
+                self.smoothed_surface_area - self.surface_area_std,
+                self.smoothed_surface_area + self.surface_area_std,
+                color="black", 
+                alpha=0.2, 
+                label="Surface area St.Dev"
+            )
+        
+        if show_events:
+            self._plot_cycle_events(ax)
+            legend_items = ax.get_legend_handles_labels()
+            if show_events_in_legend:
+                pass
+                ax.legend(*_deduplicate_legend_items(legend_items))
+            else:
+                ax.legend(legend_items[0][:7], legend_items[1][:7])
+        else:
+            ax.legend()
+        
+        ax.set_xlabel("Time after imaging start (min)")
+        ax.set_ylabel("Surface area (μm²)")
+        if add_title:
+            ax.set_title(f"Cell Cycle {self.cycle_id} - Surface Area")
+
+    def _plot_surface_area_growth_rate(
+            self,
+            ax: Axes,
+            add_title: bool = True,
+            show_events: bool = True,
+            show_events_in_legend: bool = True
+        ) -> None:
+        """
+        Plot the surface area growth rate data for validation.
+
+        Parameters
+        ----------
+        ax : Axes
+            The matplotlib Axes object to plot on.
+        add_title : bool, optional
+            Whether to add a title to the plot. Default is True.
+        show_events : bool, optional
+            Whether to display cell cycle events on the plot. 
+            Default is True.
+        show_events_in_legend : bool, optional
+            Whether to include cell cycle events in the legend.
+            Default is True.
+
+        Returns
+        -------
+        None
+        
+        """
+        ax.plot(
+            self.time, 
+            self.surface_area_growth_rate, 
+            marker="x", 
+            label="Surface area growth rate"
+        )
+
+        if show_events:
+            self._plot_cycle_events(ax)
+            legend_items = ax.get_legend_handles_labels()
+            if show_events_in_legend:
+                ax.legend(*_deduplicate_legend_items(legend_items))
+            else:
+                ax.legend(legend_items[0][:3], legend_items[1][:3])
+        else:
+            ax.legend()
+        
+        ax.set_xlabel("Time after imaging start (min)")
+        ax.set_ylabel("Surface area growth rate (μm² min⁻¹)")
+        if add_title:
+            ax.set_title(f"Cell Cycle {self.cycle_id} - Surface Area Growth Rate")
+
     def _plot_overview(
         self, 
         ax: Axes,
@@ -1910,7 +2144,8 @@ class CellCycle:
         show_events_in_legend: bool = True
         ) -> Figure:
         """
-        Plot an overview of all key data for this cell cycle.
+        Plot an overview of all key data relevant to protein production
+        rate calculation for this cell cycle.
 
         Parameters
         ----------
