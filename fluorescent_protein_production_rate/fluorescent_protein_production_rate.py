@@ -3726,7 +3726,7 @@ class FluorescentProteinProductionRateExperiment:
 
         Parameters
         ----------
-        rate_type : str
+        gp_type : str
             The type of values to plot. Supported values are:
             - "production rate": Plot the estimated production rates.
             - "normalised production rate": Plot the normalised 
