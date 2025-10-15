@@ -37,15 +37,17 @@ class InsufficientDataWarning(Warning):
 
 class CellCycle:
     """
-    Represents a single cell cycle. Provides methods for analyzing
-    fluorescent protein dynamics from raw volume and concentration data 
-    through to volume-specific protein production rates.
+    Base class representing a single cell cycle. This class should not
+    be instantiated directly but rather inherited from in child classes.
+    Provides methods for analyzing fluorescent protein dynamics from raw
+    volume and concentration data particularly for calculating measures
+    of protein production rates.
 
     Notes
     -----
     The main analysis methods need to be called in the following order:
-    1. `merge_cycle_data()`: Combines mother cell and bud data into a 
-        unified time series.
+    1. `merge_cycle_data()`: Combines cell and bud data into a unified 
+        time series.
     2. `calculate_abundance()`: Computes total protein abundance from
         concentration and volume.
     3. `calculate_smooth_abundance()`: Applies Gaussian process 
@@ -61,73 +63,12 @@ class CellCycle:
     these steps in the correct order, allowing users to process
     data in one go.
     """
-    def __init__(
-        self, 
-        cycle_id: str,
-        mother_data: pd.DataFrame,
-        previous_bud_data: pd.DataFrame,
-        current_bud_data: pd.DataFrame,
-        cycle_events: Dict[str, int],
-        cycle_end_event: str,
-        min_extra_data_points: int = 3,
-        max_extra_data_points: int = 8
-    ) -> None:
-        """
-        Initialize a CellCycle with experimental data.
-
-        Parameters
-        ----------
-        cycle_id : str
-            A unique identifier for the cell cycle.
-        mother_data : pd.DataFrame
-            DataFrame containing data for the mother cell. Requires at
-            least integer TimeID, float Volume, float Concentration and
-            boolean Interpolate columns.
-        previous_bud_data : pd.DataFrame
-            DataFrame containing data for the previous bud. Requires at
-            least integer TimeID, float Volume and boolean Interpolate
-            columns.
-        current_bud_data : pd.DataFrame
-            DataFrame containing data for the current bud. Requires at
-            least integer TimeID, float Volume and boolean Interpolate
-            columns.
-        cycle_events : Dict[str, int]
-            A dictionary mapping event names to their corresponding time
-            points. Requires at least Bud_0 and Bud_1 key value pairs as
-            well as pairs for the cycle end events.
-        cycle_end_event : str
-            The name of the event that marks the end of the cell cycle.
-            For example, if cycle ends are defined by "Mitotic_exit_0"
-            and "Mitotic_exit_1", this should be "Mitotic_exit".
-        min_extra_data_points : int, optional
-            Minimum number of extra data points before and after the 
-            cycle's beginning and end for smoothing. Default is 3.
-        max_extra_data_points : int, optional
-            Maximum number of extra data points before and after the 
-            cycle's beginning and end for smoothing. Additional points
-            will be discarded. Default is 8.
-
-        Returns
-        -------
-        None
-        """
-        self.cycle_id = cycle_id
-        
-        # Data which will stored and not modified.
-        self.cell_data = mother_data.copy()
-        self.previous_bud_data = previous_bud_data.copy()
-        self.current_bud_data = current_bud_data.copy()
-        self.cycle_events = cycle_events.copy()
-        self.cycle_end_event = cycle_end_event
-
-        self.validate_input_data(min_extra_data_points, max_extra_data_points)
-        
-        # Initialize internal data containers for calculated values - these will
-        # be populated by analysis methods and typically acccessed via properties.
-        self._cycle_data: Optional[pd.DataFrame] = None
-        self._abundance_gp: Optional[GaussianProcessRegressor] = None
-        self._volume_gp: Optional[GaussianProcessRegressor] = None
-        self._surface_area_gp: Optional[GaussianProcessRegressor] = None
+    def __init__() -> None:
+        # This should be overidden in child classes.
+        raise NotImplementedError(
+            "CellCycle is a base class and should not be instantiated directly. "
+            "Please use a child class such as MotherCellCycle or DaughterCellCycle."
+        )
 
     def __bool__(self) -> bool:
         """
@@ -317,17 +258,9 @@ class CellCycle:
         )
     @property
     def cell_volume(self) -> np.ndarray:
-        """Volume of the mother cell at each time point."""
+        """Volume of the cell (excluding buds) at each time point."""
         return self._get_cycle_data_column_or_raise(
             "Volume", "Cell volume not available. Call merge_data() first."
-        )
-    
-    @property
-    def previous_bud_volume(self) -> np.ndarray:
-        """Volume of the previous bud at each time point."""
-        return self._get_cycle_data_column_or_raise(
-            "Previous bud volume", 
-            "Previous bud volume not available. Call merge_data() first."
         )
     
     @property
@@ -379,24 +312,12 @@ class CellCycle:
         )
     @property
     def cell_surface_area(self) -> np.ndarray:
-        """Surface area of the mother cell at each time point."""
+        """Surface area of the cell (excluding buds) at each time point."""
         return self._get_cycle_data_column_or_raise(
             "Surface area", 
             (
                 "Cell surface area not available. Call merge_data() first and ensure "
                 "that all input data frames have a Surface area column." 
-            )
-        )
-    
-    @property
-    def previous_bud_surface_area(self) -> np.ndarray:
-        """Surface area of the previous bud at each time point."""
-        return self._get_cycle_data_column_or_raise(
-            "Previous bud volume", 
-            "Previous bud surface area", 
-            (
-                "Previous bud surface area not available. Call merge_data() first and "
-                "ensure that all input data frames have a Surface area column." 
             )
         )
     
@@ -565,11 +486,6 @@ class CellCycle:
         return self._surface_area_gp
     
     @property
-    def previous_bud_time_id(self) -> Union[int, None]:
-        """TimeID of the previous bud event."""
-        return self.cycle_events["Bud_0"]
-    
-    @property
     def current_bud_time_id(self) -> int:
         """TimeID of the current bud event."""
         return self.cycle_events["Bud_1"]
@@ -599,337 +515,30 @@ class CellCycle:
     # Core analysis methods - these form the main pipeline.
     # Each method stores the results, generally in the _cycle_data
     # DataFrame, and returns self to enable method chaining.
-    def merge_cycle_data(
-            self,
-            image_capture_interval: int,
-            max_extra_data_points: int = 8
-        ) -> Self:
+    def merge_cycle_data() -> None:
+        """Merge cell and bud data into a unified time series."""
+        raise NotImplementedError(
+            "merge_cycle_data() must be implemented in child classes."
+        )
+    
+    def _merge_cycle_data_with_volumes() -> None:
         """
-        Merge cell and bud data into a unified time series.
-
-        This method combines volume data from the mother cell and both 
-        buds into a single DataFrame. It handles interpolation of 
-        flagged data points, adjusts bud volumes based on cell cycle 
-        events, and calculates time values in minutes from TimeIDs. If
-        Surface area columns are present, they are also interpolated
-        and adjusted to calculate a total surface area.
-
-        Parameters
-        ----------
-        image_capture_interval : int
-            The interval between image captures, in minutes. Used to 
-            calculate time values.
-        max_extra_data_points : int, optional
-            The maximum number of extra data points to include before 
-            and after the relevant cell cycle time range.
-            Default is 8.
-
-        Returns
-        -------
-        Self
-            The instance of the class with the merged cycle data stored 
-            and accessible from the .cycle_data attribute.
-
-        Notes
-        -----
-        The merged cycle data is clipped to have no more than 
-        `max_extra_data_points` before the previous cycle end and
-        after the current cycle end. In the case that Bud_0 is None,
-        points will be clipped before the current cycle if they are
-        missing from either the mother or previous bud data.
+        Merge the volume data from cell and buds into a single 
+        DataFrame.
         """
-        # Check whether Surface area columns are present in the data. Use them if 
-        # present in all three data frames, skip if they're missing from any.
-        input_has_surface_area = np.array(
-            [
-                "Surface area" in self.cell_data.columns,
-                "Surface area" in self.previous_bud_data.columns,
-                "Surface area" in self.current_bud_data.columns
-            ]
+        raise NotImplementedError(
+            "_merge_cycle_data_with_volumes() must be implemented in child classes."
         )
-
-        if input_has_surface_area.all():
-            self._merge_cycle_data_with_volumes_and_surface_area(
-                image_capture_interval, max_extra_data_points
-            )
-        else:
-            if input_has_surface_area.any():
-                warn(
-                    "Surface area data is missing from some input data frames. "
-                    "Surface area will not be used in the merged cycle data.",
-                    MissingDataWarning
-                )
-            self._merge_cycle_data_with_volumes(
-                image_capture_interval, max_extra_data_points
-            )
-        return self
-
-    def _merge_cycle_data_with_volumes(
-            self, image_capture_interval: int, max_extra_data_points: int = 8
-        ) -> None:
+    
+    def _merge_cycle_data_with_volumes_and_surface_area() -> None:
         """
-        Merge the volume data from mother cell and buds into a single 
-        DataFrame. Called when merging cycle data and only volume
-        (and not surface area) is not available.
-
-        Parameters
-        ----------
-        image_capture_interval : int
-            The interval between image captures, in minutes. Used to 
-            calculate time values.
-        max_extra_data_points : int, optional
-            The maximum number of extra data points to include before 
-            and after the relevant cell cycle time range.
-            Default is 8.
-
-        Returns
-        -------
-        None
+        Merge the volume data from cell and buds into a single 
+        DataFrame.
         """
-        # Prepare data for merging. Delete any datapoints which should be removed,
-        # interpolate any resulting missing values, and then remove the redundant 
-        # Interpolate column.
-        cell_data = self.cell_data.copy()
-        cell_data.loc[cell_data["Interpolate"], ["Volume", "Concentration"]] = np.nan
-        cell_data.drop(columns=["Interpolate"], inplace=True)
-
-        previous_bud_data = self.previous_bud_data.copy()
-        previous_bud_data.loc[previous_bud_data["Interpolate"], "Volume"] = np.nan
-        previous_bud_data.drop(columns=["Interpolate"], inplace=True)
-
-        current_bud_data = self.current_bud_data.copy()
-        current_bud_data.loc[current_bud_data["Interpolate"], "Volume"] = np.nan
-        current_bud_data.drop(columns=["Interpolate"], inplace=True)
-
-        # Combine the data into a single DataFrame.
-        merged_data = cell_data.merge(
-            previous_bud_data.rename(columns={"Volume" : "Previous bud volume"}),
-            on="TimeID",
-            how="left"
-        ).merge(
-            current_bud_data.rename(columns={"Volume" : "Current bud volume"}),
-            on="TimeID",
-            how="left"
+        raise NotImplementedError(
+            "_merge_cycle_data_with_volumes_and_surface_area() must be implemented "
+            "in child classes."
         )
-        # Setting the index like this allows for easy access to values with specific
-        # TimeIDs using the .at[] accessor.
-        merged_data.set_index(merged_data["TimeID"].values, inplace=True)
-
-        # Ensure that bud volumes are set to 0 up to and including the relevant bud
-        # events. Skip this for the previous bud if Bud_0 is None.
-        if self.previous_bud_time_id is not None:
-            pre_bud_mask = merged_data["TimeID"] <= self.previous_bud_time_id
-            merged_data.loc[pre_bud_mask, "Previous bud volume"] = 0.0
-
-        pre_bud_mask = merged_data["TimeID"] <= self.current_bud_time_id
-        merged_data.loc[pre_bud_mask, "Current bud volume"] = 0.0
-
-        # If Bud_0 is None, remove any time points from the previous cycle where either
-        # previous bud data is missing.
-        if self.previous_bud_time_id is None:
-            mask = (
-                (merged_data["TimeID"] < self.current_bud_time_id)
-                & (merged_data["Previous bud volume"].isna())
-            )
-            merged_data = merged_data.loc[~mask]
-        
-        # Handle any remaining NaN values, particularly the bud volumes from budding up 
-        # to the first point at which they were tracked.
-        merged_data.interpolate(method="linear", axis="rows", inplace=True)
-
-        # Ensure that bud volumes are fixed after the relevant cell cycle end point.
-        previous_bud_final_volume = merged_data.at[
-            self.previous_cycle_end_time_id, "Previous bud volume"
-        ]
-        post_bud_mask = merged_data["TimeID"] > self.previous_cycle_end_time_id
-        merged_data.loc[post_bud_mask, "Previous bud volume"] = previous_bud_final_volume
-
-        current_bud_final_volume = merged_data.at[
-            self.current_cycle_end_time_id, "Current bud volume"
-        ]
-        post_bud_mask = merged_data["TimeID"] > self.current_cycle_end_time_id
-        merged_data.loc[post_bud_mask, "Current bud volume"] = current_bud_final_volume
-
-        # Adjust previous bud volumes such that correct volumes are maintained over the
-        # current cell cycle.
-        merged_data["Previous bud volume"] = (
-            merged_data["Previous bud volume"] - previous_bud_final_volume
-        )
-
-        # Clip unnecessary data points.
-        min_required_time_id = (
-            self.previous_cycle_end_time_id - max_extra_data_points
-        )
-        max_required_time_id = (
-            self.current_cycle_end_time_id + max_extra_data_points
-        )
-        time_id_mask = (
-            (merged_data["TimeID"] >= min_required_time_id)
-            & (merged_data["TimeID"] <= max_required_time_id)
-        )
-        merged_data = merged_data.loc[time_id_mask]
-
-        # Finalise and store the merged data frame.
-        merged_data["Total volume"] = (
-            merged_data["Volume"]
-            + merged_data["Previous bud volume"]
-            + merged_data["Current bud volume"]
-        )
-        merged_data["Time"] = (merged_data["TimeID"] - 1) * image_capture_interval
-        self._cycle_data = merged_data
-
-    def _merge_cycle_data_with_volumes_and_surface_area(
-            self, image_capture_interval: int, max_extra_data_points: int = 8
-        ) -> None:
-        """
-        Merge the volume data from mother cell and buds into a single 
-        DataFrame. Called when merging cycle data and Surface Area is 
-        available in all three input DataFrames.
-
-        Parameters
-        ----------
-        image_capture_interval : int
-            The interval between image captures, in minutes. Used to 
-            calculate time values.
-        max_extra_data_points : int, optional
-            The maximum number of extra data points to include before 
-            and after the relevant cell cycle time range.
-            Default is 8.
-
-        Returns
-        -------
-        None
-        """
-        # Prepare data for merging. Delete any datapoints which should be removed,
-        # interpolate any resulting missing values, and then remove the redundant 
-        # Interpolate column.
-        cell_data = self.cell_data.copy()
-        cell_data.loc[
-            cell_data["Interpolate"], ["Volume", "Surface area", "Concentration"]
-        ] = np.nan
-        cell_data.drop(columns=["Interpolate"], inplace=True)
-
-        previous_bud_data = self.previous_bud_data.copy()
-        previous_bud_data.loc[
-            previous_bud_data["Interpolate"], ["Volume", "Surface area"]
-        ] = np.nan
-        previous_bud_data.drop(columns=["Interpolate"], inplace=True)
-
-        current_bud_data = self.current_bud_data.copy()
-        current_bud_data.loc[
-            current_bud_data["Interpolate"], ["Volume", "Surface area"]
-        ] = np.nan
-        current_bud_data.drop(columns=["Interpolate"], inplace=True)
-
-        # Combine the data into a single DataFrame.
-        merged_data = cell_data.merge(
-            previous_bud_data.rename(
-                    columns={
-                        "Volume" : "Previous bud volume", 
-                        "Surface area" : "Previous bud surface area"
-                    }
-                ),
-            on="TimeID",
-            how="left"
-        ).merge(
-            current_bud_data.rename(
-                columns={
-                    "Volume" : "Current bud volume",
-                    "Surface area" : "Current bud surface area"
-                }
-            ),
-            on="TimeID",
-            how="left"
-        )
-        # Setting the index like this allows for easy access to values with specific
-        # TimeIDs using the .at[] accessor.
-        merged_data.set_index(merged_data["TimeID"].values, inplace=True)
-
-        # Ensure that bud volumes and surface areas are set to 0 up to and including the 
-        # relevant bud events. Skip this for the previous bud if Bud_0 is None.
-        if self.previous_bud_time_id is not None:
-            pre_bud_mask = merged_data["TimeID"] <= self.previous_bud_time_id
-            merged_data.loc[pre_bud_mask, "Previous bud volume"] = 0.0
-            merged_data.loc[pre_bud_mask, "Previous bud surface area"] = 0.0
-
-        pre_bud_mask = merged_data["TimeID"] <= self.current_bud_time_id
-        merged_data.loc[pre_bud_mask, "Current bud volume"] = 0.0
-        merged_data.loc[pre_bud_mask, "Current bud surface area"] = 0.0
-
-        # If Bud_0 is None, remove any time points from the previous cycle where either
-        # previous bud data is missing.
-        if self.previous_bud_time_id is None:
-            mask = (
-                (merged_data["TimeID"] < self.current_bud_time_id)
-                & (merged_data["Previous bud volume"].isna())
-            )
-            merged_data = merged_data.loc[~mask]
-        
-        # Handle any remaining NaN values, particularly the bud volumes and surface areas
-        # from budding up to the first point at which they were tracked.
-        merged_data.interpolate(method="linear", axis="rows", inplace=True)
-
-        # Ensure that bud volumes and surface areas are fixed after the relevant cell 
-        # cycle end point.
-        previous_bud_final_volume = merged_data.at[
-            self.previous_cycle_end_time_id, "Previous bud volume"
-        ]
-        previous_bud_final_surface_area = merged_data.at[
-            self.previous_cycle_end_time_id, "Previous bud surface area"
-        ]
-        post_bud_mask = merged_data["TimeID"] > self.previous_cycle_end_time_id
-        merged_data.loc[post_bud_mask, "Previous bud volume"] = previous_bud_final_volume
-        merged_data.loc[
-            post_bud_mask, "Previous bud surface area"
-        ] = previous_bud_final_surface_area
-
-        current_bud_final_volume = merged_data.at[
-            self.current_cycle_end_time_id, "Current bud volume"
-        ]
-        current_bud_final_surface_area = merged_data.at[
-            self.current_cycle_end_time_id, "Current bud surface area"
-        ]
-        post_bud_mask = merged_data["TimeID"] > self.current_cycle_end_time_id
-        merged_data.loc[post_bud_mask, "Current bud volume"] = current_bud_final_volume
-        merged_data.loc[
-            post_bud_mask, "Current bud surface area"
-        ] = current_bud_final_surface_area
-
-        # Adjust previous bud volumes and surface areas such that correct volumes are 
-        # maintained over the current cell cycle.
-        merged_data["Previous bud volume"] = (
-            merged_data["Previous bud volume"] - previous_bud_final_volume
-        )
-        merged_data["Previous bud surface area"] = (
-            merged_data["Previous bud surface area"] - previous_bud_final_surface_area
-        )
-
-        # Clip unnecessary data points.
-        min_required_time_id = (
-            self.previous_cycle_end_time_id - max_extra_data_points
-        )
-        max_required_time_id = (
-            self.current_cycle_end_time_id + max_extra_data_points
-        )
-        time_id_mask = (
-            (merged_data["TimeID"] >= min_required_time_id)
-            & (merged_data["TimeID"] <= max_required_time_id)
-        )
-        merged_data = merged_data.loc[time_id_mask]
-
-        # Finalise and store the merged data frame.
-        merged_data["Total volume"] = (
-            merged_data["Volume"]
-            + merged_data["Previous bud volume"]
-            + merged_data["Current bud volume"]
-        )
-        merged_data["Total surface area"] = (
-            merged_data["Surface Area"]
-            + merged_data["Previous bud surface area"]
-            + merged_data["Current bud surface area"]
-        )
-        merged_data["Time"] = (merged_data["TimeID"] - 1) * image_capture_interval
-        self._cycle_data = merged_data
 
     def calculate_abundance(self) -> Self:
         """
@@ -1622,100 +1231,15 @@ class CellCycle:
         plot_func(ax, add_title, show_events, show_events_in_legend)
         return fig
     
-    def _plot_volume(
-            self, 
-            ax: Axes, 
-            add_title: bool = True, 
-            show_events: bool = True,
-            show_events_in_legend = True
-        ) -> None:
+    def _plot_volume() -> None:
         """
         Plot volume data for validation as well as smoothed total 
         volumes if available.
-
-        Parameters
-        ----------
-        ax : Axes
-            The matplotlib Axes object to plot on.
-        add_title : bool, optional
-            Whether to add a title to the plot. Default is True.
-        show_events : bool, optional
-            Whether to display cell cycle events on the plot. 
-            Default is True.
-        show_events_in_legend : bool, optional
-            Whether to include cell cycle events in the legend.
-            Default is True.
-
-        Returns
-        -------
-        None
         """
-        ax.plot(self.time, self.total_volume, marker="x", label="Total volume")
-        ax.plot(self.time, self.cycle_data["Volume"], marker="x", label="Cell volume")
-
-        # Only plot the bud volumes while the buds are present.
-        previous_bud_mask = self._mask_time_ids_between(
-            self.previous_bud_time_id, self.previous_cycle_end_time_id, "both"
-        )
-        # Compensate for previous bud volume adjustment to give a more intuitive plot.
-        previous_bud_final_volume = self.previous_bud_data.loc[
-            self.previous_bud_data["TimeID"] == self.previous_cycle_end_time_id,
-            "Volume"
-        ].values[0]
-        ax.plot(
-            self.time[previous_bud_mask], 
-            self.previous_bud_volume[previous_bud_mask] + previous_bud_final_volume,
-            marker="x",
-            label="Previous bud volume"
+        raise NotImplementedError(
+            "_plot_volume() must be implemented in child classes."
         )
 
-        current_bud_mask = self._mask_time_ids_between(
-            self.current_bud_time_id, self.current_cycle_end_time_id, "both"
-        )
-        ax.plot(
-            self.time[current_bud_mask], 
-            self.current_bud_volume[current_bud_mask], 
-            marker="x", 
-            label="Current bud volume"
-        )
-
-        # Plot smoothed total volume estimates if they are available. Don't raise an 
-        # error if they are not, because plotting the unsmoothed volumes alone may still 
-        # be useful.
-        if self._cycle_data_has_column("Smoothed volume"):
-            ax.plot(
-                self.time, 
-                self.smoothed_volume,
-                color="black",
-                linestyle="-",
-                label="Smoothed volume"
-            )
-        if self._cycle_data_has_column("Volume std"):
-            ax.fill_between(
-                self.time,
-                self.smoothed_volume - self.volume_std,
-                self.smoothed_volume + self.volume_std,
-                color="black", 
-                alpha=0.2, 
-                label="Volume St.Dev"
-            )
-        
-        if show_events:
-            self._plot_cycle_events(ax)
-            legend_items = ax.get_legend_handles_labels()
-            if show_events_in_legend:
-                pass
-                ax.legend(*_deduplicate_legend_items(legend_items))
-            else:
-                ax.legend(legend_items[0][:7], legend_items[1][:7])
-        else:
-            ax.legend()
-        
-        ax.set_xlabel("Time after imaging start (min)")
-        ax.set_ylabel("Volume (fL)")
-        if add_title:
-            ax.set_title(f"Cell Cycle {self.cycle_id} - Volume")
-            
     def _plot_concentration(
             self, 
             ax: Axes, 
@@ -1983,108 +1507,15 @@ class CellCycle:
         ax.set_ylabel("Volume growth rate (fL min⁻¹)")
         if add_title:
             ax.set_title(f"Cell Cycle {self.cycle_id} - Volume Growth Rate")
-
-    def _plot_surface_area(
-            self, 
-            ax: Axes, 
-            add_title: bool = True, 
-            show_events: bool = True,
-            show_events_in_legend = True
-        ) -> None:
+    
+    def _plot_surface_area() -> None:
         """
         Plot surface area data for validation as well as smoothed total 
         surface area if available.
-
-        Parameters
-        ----------
-        ax : Axes
-            The matplotlib Axes object to plot on.
-        add_title : bool, optional
-            Whether to add a title to the plot. Default is True.
-        show_events : bool, optional
-            Whether to display cell cycle events on the plot. 
-            Default is True.
-        show_events_in_legend : bool, optional
-            Whether to include cell cycle events in the legend.
-            Default is True.
-
-        Returns
-        -------
-        None
         """
-        ax.plot(
-            self.time, self.total_surface_area, marker="x", label="Total surface area"
+        raise NotImplementedError(
+            "_plot_surface_area() must be implemented in child classes."
         )
-        ax.plot(
-            self.time, 
-            self.cycle_data["Surface area"], 
-            marker="x", 
-            label="Cell surface area"
-        )
-
-        # Only plot the bud surface areas while the buds are present.
-        previous_bud_mask = self._mask_time_ids_between(
-            self.previous_bud_time_id, self.previous_cycle_end_time_id, "both"
-        )
-        # Compensate for previous bud surface area adjustment to give a more intuitive 
-        # plot.
-        previous_bud_final_surface_area = self.previous_bud_data.loc[
-            self.previous_bud_data["TimeID"] == self.previous_cycle_end_time_id,
-            "Surface area"
-        ].values[0]
-        ax.plot(
-            self.time[previous_bud_mask], 
-            self.previous_bud_volume[previous_bud_mask] + previous_bud_final_surface_area,
-            marker="x",
-            label="Previous bud surface area"
-        )
-
-        current_bud_mask = self._mask_time_ids_between(
-            self.current_bud_time_id, self.current_cycle_end_time_id, "both"
-        )
-        ax.plot(
-            self.time[current_bud_mask], 
-            self.current_bud_surface_area[current_bud_mask], 
-            marker="x", 
-            label="Current bud surface area"
-        )
-
-        # Plot smoothed total surface area etimates if they are available. Don't raise an 
-        # error if they are not, because plotting the unsmoothed values alone may still 
-        # be useful.
-        if self._cycle_data_has_column("Smoothed surface area"):
-            ax.plot(
-                self.time, 
-                self.smoothed_surface_area,
-                color="black",
-                linestyle="-",
-                label="Smoothed surface area"
-            )
-        if self._cycle_data_has_column("Surface area std"):
-            ax.fill_between(
-                self.time,
-                self.smoothed_surface_area - self.surface_area_std,
-                self.smoothed_surface_area + self.surface_area_std,
-                color="black", 
-                alpha=0.2, 
-                label="Surface area St.Dev"
-            )
-        
-        if show_events:
-            self._plot_cycle_events(ax)
-            legend_items = ax.get_legend_handles_labels()
-            if show_events_in_legend:
-                pass
-                ax.legend(*_deduplicate_legend_items(legend_items))
-            else:
-                ax.legend(legend_items[0][:7], legend_items[1][:7])
-        else:
-            ax.legend()
-        
-        ax.set_xlabel("Time after imaging start (min)")
-        ax.set_ylabel("Surface area (μm²)")
-        if add_title:
-            ax.set_title(f"Cell Cycle {self.cycle_id} - Surface Area")
 
     def _plot_surface_area_growth_rate(
             self,
@@ -2241,6 +1672,809 @@ class CellCycle:
             min_extra_data_points, max_extra_data_points
         )
         
+    def _validate_input_data_frames() -> None:
+        """
+        Validate that the input data frames have the required columns.
+        Warn if there is any missing data in columns other than TimeID.
+        """
+        raise NotImplementedError(
+            "_validate_input_data_frames() must be implemented in child classes."
+        )
+            
+    def _validate_cycle_events(self) -> None:
+        """
+        Validate the cycle events for consistency and correctness.
+
+        This method checks that the cycle events are correctly ordered,
+        that they reference valid TimeIDs, and that all required events
+        are present. The only exception is that "Bud_0" may be None to
+        accomodate situations where not all previous bud data is
+        available. It raises errors if any issues are found.
+
+        Raises
+        ------
+        ValueError
+            If any of the cycle events are missing, incorrectly ordered,
+            or reference TimeIDs which are not present in the input
+            `cell_data`.
+        """
+        # Validate that the essential event keys are present in cycle_events and that
+        # the corresponding TimeIDs are not overlapping and in the correct order.
+        event_keys = [
+            "Bud_0", f"{self.cycle_end_event}_0", "Bud_1", f"{self.cycle_end_event}_1"
+        ]
+        for i, key in enumerate(event_keys):
+            if key not in self.cycle_events:
+                raise ValueError(
+                    f"Cycle {self.cycle_id} missing essential cycle event: '{key}'"
+                )
+            # Check that TimeIDs are in order. Allow for "Bud_0" to be None.
+            if key == "Bud_0" and self.cycle_events["Bud_0"] is None:
+                continue
+            elif event_keys[i - 1] == "Bud_0" and self.cycle_events["Bud_0"] is None:
+                # Can't compare Bud_0 to the previous event, so skip.
+                continue
+            elif i and self.cycle_events[key] <= self.cycle_events[event_keys[i - 1]]:
+                raise ValueError(
+                    f"Cycle {self.cycle_id} event '{key}' has TimeID "
+                    f"{self.cycle_events[key]} which is less than or equal to the "
+                    f"preceding essential event '{event_keys[i - 1]}' which has TimeID "
+                    f"{self.cycle_events[event_keys[i - 1]]}."
+                )
+        
+        # Validate that all cycle events reference TimeIDs which have corresponding 
+        # data points.
+        all_time_ids = set(self.cell_data["TimeID"])
+        for key, value in self.cycle_events.items():
+            if key == "Bud_0" and value is None:
+                continue
+            elif value not in all_time_ids:
+                raise ValueError(
+                    f"Cycle {self.cycle_id} event '{key}' references TimeID: {value} "
+                    f"which is not present in cell_data."
+                )
+    def _validate_input_data_frame_time_ids() -> None:
+        """
+        Validate the TimeID values in the input data frames for
+        consistency and correctness.
+        """
+        raise NotImplementedError(
+            "_validate_input_data_frame_time_ids() must be implemented in child classes."
+        )
+        
+    def _validate_sufficient_extra_data_points() -> None:
+        """
+        Validate that the cycle data has sufficient extra data points
+        before and after the cycle end events for smoothing purposes.
+        """
+        raise NotImplementedError(
+            "_validate_sufficient_extra_data_points() must be implemented in child "
+            "classes."
+        )
+
+    # Additional methods.
+    def get_time_ids_for_events(self, event_names: Sequence[str]) -> np.ndarray[int]:
+        """
+        Retrieve TimeIDs for specified cycle events.
+
+        Parameters
+        ----------
+        event_names : Sequence[str]
+            A sequence of event names for which the corresponding 
+            TimeIDs are to be retrieved.
+
+        Returns
+        -------
+        np.ndarray[int]
+            An array of integers representing the TimeIDs corresponding 
+            to the specified event names.
+
+        Raises
+        ------
+        ValueError
+            If any of the specified event names are not found in the 
+            `cycle_events` attribute of the object.
+        """
+        time_ids = []
+        for event_name in event_names:
+            if event_name not in self.cycle_events:
+                raise ValueError(
+                    f"Cycle {self.cycle_id} missing event '{event_name}'"
+                )
+            time_ids.append(self.cycle_events[event_name])
+        return np.array(time_ids, dtype=int)
+
+    def extract_aligned_cycle_data(self) -> pd.DataFrame:
+        """
+        This method retrieves the aligned cycle data from the cycle 
+        dataset.
+
+        Returns
+        -------
+        pd.DataFrame
+            A DataFrame containing the aligned cycle data.
+
+        Raises
+        ------
+        ValueError
+            If the "Standard coordinate" column is not present in the 
+            cycle data.
+        """
+        if not self._cycle_data_has_column("Standard coordinate"):
+            raise ValueError(
+                "Cycle {self.cycle_id} does not have aligned cycle data. "
+                "Call align_to_standard_coordinate() first."
+            )
+        mask = self._cycle_data["Standard coordinate"].notna()
+        return self.cycle_data[mask].copy()
+    
+    def _cycle_data_has_column(self, column_name: str) -> bool:
+        """Check if cycle data contains a specific column."""
+        return column_name in self.cycle_data.columns
+
+    def _get_cycle_data_column_or_raise(
+            self, column_name: str, error_message: str
+        ) -> np.ndarray:
+        """
+        Get a column from cycle data or raise an error if it doesn't 
+        exist.
+        """
+        if not self._cycle_data_has_column(column_name):
+            raise ValueError(error_message)
+        return self.cycle_data[column_name].values
+
+    def _mask_time_ids_between(
+            self, begin: int, end: int, include: str
+        ) -> np.ndarray[bool]:
+        """Create a boolean mask for TimeIDs between two values."""
+        match include:
+            case "begin":
+                mask = (self.time_id >= begin) & (self.time_id < end)
+            case "end":
+                mask = (self.time_id > begin) & (self.time_id <= end)
+            case "both":
+                mask = (self.time_id >= begin) & (self.time_id <= end)
+            case "neither":
+                mask = (self.time_id > begin) & (self.time_id < end)
+            case _:
+                raise ValueError(
+                    f"Invalid include value: {include}. "
+                    "Must be one of 'begin', 'end', 'both', or 'neither'."
+                )
+        return mask
+    
+    def _drop_column(self, column: str) -> None:
+        """Remove the named column from _cycle_data if it exists."""
+        if self._cycle_data_has_column(column):
+            self._cycle_data.drop(columns=(column), inplace=True)
+
+class MotherCellCycle(CellCycle):
+    """
+    A specialized CellCycle subclass for mother cell cycles, specified
+    as any cell cycle after the first that a cell undergoes.
+    """
+    def __init__(
+        self, 
+        cycle_id: str,
+        cell_data: pd.DataFrame,
+        previous_bud_data: pd.DataFrame,
+        current_bud_data: pd.DataFrame,
+        cycle_events: Dict[str, int],
+        cycle_end_event: str,
+        min_extra_data_points: int = 3,
+        max_extra_data_points: int = 8
+    ) -> None:
+        """
+        Initialize a CellCycle with experimental data.
+
+        Parameters
+        ----------
+        cycle_id : str
+            A unique identifier for the cell cycle.
+        cell_data : pd.DataFrame
+            DataFrame containing data for the mother cell. Requires at
+            least integer TimeID, float Volume, float Concentration and
+            boolean Interpolate columns.
+        previous_bud_data : pd.DataFrame
+            DataFrame containing data for the previous bud. Requires at
+            least integer TimeID, float Volume and boolean Interpolate
+            columns.
+        current_bud_data : pd.DataFrame
+            DataFrame containing data for the current bud. Requires at
+            least integer TimeID, float Volume and boolean Interpolate
+            columns.
+        cycle_events : Dict[str, int]
+            A dictionary mapping event names to their corresponding time
+            points. Requires at least Bud_0 and Bud_1 key value pairs as
+            well as pairs for the cycle end events.
+        cycle_end_event : str
+            The name of the event that marks the end of the cell cycle.
+            For example, if cycle ends are defined by "Mitotic_exit_0"
+            and "Mitotic_exit_1", this should be "Mitotic_exit".
+        min_extra_data_points : int, optional
+            Minimum number of extra data points before and after the 
+            cycle's beginning and end for smoothing. Default is 3.
+        max_extra_data_points : int, optional
+            Maximum number of extra data points before and after the 
+            cycle's beginning and end for smoothing. Additional points
+            will be discarded. Default is 8.
+
+        Returns
+        -------
+        None
+        """
+        self.cycle_id = cycle_id
+        
+        # Data which will stored and not modified.
+        self.cell_data = cell_data.copy()
+        self.previous_bud_data = previous_bud_data.copy()
+        self.current_bud_data = current_bud_data.copy()
+        self.cycle_events = cycle_events.copy()
+        self.cycle_end_event = cycle_end_event
+
+        self.validate_input_data(min_extra_data_points, max_extra_data_points)
+        
+        # Initialize internal data containers for calculated values - these will
+        # be populated by analysis methods and typically acccessed via properties.
+        self._cycle_data: Optional[pd.DataFrame] = None
+        self._abundance_gp: Optional[GaussianProcessRegressor] = None
+        self._volume_gp: Optional[GaussianProcessRegressor] = None
+        self._surface_area_gp: Optional[GaussianProcessRegressor] = None
+
+    @property
+    def previous_bud_volume(self) -> np.ndarray:
+        """Volume of the previous bud at each time point."""
+        return self._get_cycle_data_column_or_raise(
+            "Previous bud volume", 
+            "Previous bud volume not available. Call merge_data() first."
+        )
+    
+    @property
+    def previous_bud_surface_area(self) -> np.ndarray:
+        """Surface area of the previous bud at each time point."""
+        return self._get_cycle_data_column_or_raise(
+            "Previous bud volume", 
+            "Previous bud surface area", 
+            (
+                "Previous bud surface area not available. Call merge_data() first and "
+                "ensure that all input data frames have a Surface area column." 
+            )
+        )
+        
+    @property
+    def previous_bud_time_id(self) -> Union[int, None]:
+        """TimeID of the previous bud event."""
+        return self.cycle_events["Bud_0"]
+
+
+    def merge_cycle_data(
+            self,
+            image_capture_interval: int,
+            max_extra_data_points: int = 8
+        ) -> Self:
+        """
+        Merge cell and bud data into a unified time series.
+
+        This method combines volume data from the mother cell and both 
+        buds into a single DataFrame. It handles interpolation of 
+        flagged data points, adjusts bud volumes based on cell cycle 
+        events, and calculates time values in minutes from TimeIDs. If
+        Surface area columns are present, they are also interpolated
+        and adjusted to calculate a total surface area.
+
+        Parameters
+        ----------
+        image_capture_interval : int
+            The interval between image captures, in minutes. Used to 
+            calculate time values.
+        max_extra_data_points : int, optional
+            The maximum number of extra data points to include before 
+            and after the relevant cell cycle time range.
+            Default is 8.
+
+        Returns
+        -------
+        Self
+            The instance of the class with the merged cycle data stored 
+            and accessible from the .cycle_data attribute.
+
+        Notes
+        -----
+        The merged cycle data is clipped to have no more than 
+        `max_extra_data_points` before the previous cycle end and
+        after the current cycle end. In the case that Bud_0 is None,
+        points will be clipped before the current cycle if they are
+        missing from either the mother or previous bud data.
+        """
+        # Check whether Surface area columns are present in the data. Use them if 
+        # present in all three data frames, skip if they're missing from any.
+        input_has_surface_area = np.array(
+            [
+                "Surface area" in self.cell_data.columns,
+                "Surface area" in self.previous_bud_data.columns,
+                "Surface area" in self.current_bud_data.columns
+            ]
+        )
+
+        if input_has_surface_area.all():
+            self._merge_cycle_data_with_volumes_and_surface_area(
+                image_capture_interval, max_extra_data_points
+            )
+        else:
+            if input_has_surface_area.any():
+                warn(
+                    "Surface area data is missing from some input data frames. "
+                    "Surface area will not be used in the merged cycle data.",
+                    MissingDataWarning
+                )
+            self._merge_cycle_data_with_volumes(
+                image_capture_interval, max_extra_data_points
+            )
+        return self
+
+    def _merge_cycle_data_with_volumes(
+            self, image_capture_interval: int, max_extra_data_points: int = 8
+        ) -> None:
+        """
+        Merge the volume data from cell and buds into a single 
+        DataFrame. Called when merging cycle data and only volume
+        (and not surface area) is not available.
+
+        Parameters
+        ----------
+        image_capture_interval : int
+            The interval between image captures, in minutes. Used to 
+            calculate time values.
+        max_extra_data_points : int, optional
+            The maximum number of extra data points to include before 
+            and after the relevant cell cycle time range.
+            Default is 8.
+
+        Returns
+        -------
+        None
+        """
+        # Prepare data for merging. Delete any datapoints which should be removed,
+        # interpolate any resulting missing values, and then remove the redundant 
+        # Interpolate column.
+        cell_data = self.cell_data.copy()
+        cell_data.loc[cell_data["Interpolate"], ["Volume", "Concentration"]] = np.nan
+        cell_data.drop(columns=["Interpolate"], inplace=True)
+
+        previous_bud_data = self.previous_bud_data.copy()
+        previous_bud_data.loc[previous_bud_data["Interpolate"], "Volume"] = np.nan
+        previous_bud_data.drop(columns=["Interpolate"], inplace=True)
+
+        current_bud_data = self.current_bud_data.copy()
+        current_bud_data.loc[current_bud_data["Interpolate"], "Volume"] = np.nan
+        current_bud_data.drop(columns=["Interpolate"], inplace=True)
+
+        # Combine the data into a single DataFrame.
+        merged_data = cell_data.merge(
+            previous_bud_data.rename(columns={"Volume" : "Previous bud volume"}),
+            on="TimeID",
+            how="left"
+        ).merge(
+            current_bud_data.rename(columns={"Volume" : "Current bud volume"}),
+            on="TimeID",
+            how="left"
+        )
+        # Setting the index like this allows for easy access to values with specific
+        # TimeIDs using the .at[] accessor.
+        merged_data.set_index(merged_data["TimeID"].values, inplace=True)
+
+        # Ensure that bud volumes are set to 0 up to and including the relevant bud
+        # events. Skip this for the previous bud if Bud_0 is None.
+        if self.previous_bud_time_id is not None:
+            pre_bud_mask = merged_data["TimeID"] <= self.previous_bud_time_id
+            merged_data.loc[pre_bud_mask, "Previous bud volume"] = 0.0
+
+        pre_bud_mask = merged_data["TimeID"] <= self.current_bud_time_id
+        merged_data.loc[pre_bud_mask, "Current bud volume"] = 0.0
+
+        # If Bud_0 is None, remove any time points from the previous cycle where either
+        # previous bud data is missing.
+        if self.previous_bud_time_id is None:
+            mask = (
+                (merged_data["TimeID"] < self.current_bud_time_id)
+                & (merged_data["Previous bud volume"].isna())
+            )
+            merged_data = merged_data.loc[~mask]
+        
+        # Handle any remaining NaN values, particularly the bud volumes from budding up 
+        # to the first point at which they were tracked.
+        merged_data.interpolate(method="linear", axis="rows", inplace=True)
+
+        # Ensure that bud volumes are fixed after the relevant cell cycle end point.
+        previous_bud_final_volume = merged_data.at[
+            self.previous_cycle_end_time_id, "Previous bud volume"
+        ]
+        post_bud_mask = merged_data["TimeID"] > self.previous_cycle_end_time_id
+        merged_data.loc[post_bud_mask, "Previous bud volume"] = previous_bud_final_volume
+
+        current_bud_final_volume = merged_data.at[
+            self.current_cycle_end_time_id, "Current bud volume"
+        ]
+        post_bud_mask = merged_data["TimeID"] > self.current_cycle_end_time_id
+        merged_data.loc[post_bud_mask, "Current bud volume"] = current_bud_final_volume
+
+        # Adjust previous bud volumes such that correct volumes are maintained over the
+        # current cell cycle.
+        merged_data["Previous bud volume"] = (
+            merged_data["Previous bud volume"] - previous_bud_final_volume
+        )
+
+        # Clip unnecessary data points.
+        min_required_time_id = (
+            self.previous_cycle_end_time_id - max_extra_data_points
+        )
+        max_required_time_id = (
+            self.current_cycle_end_time_id + max_extra_data_points
+        )
+        time_id_mask = (
+            (merged_data["TimeID"] >= min_required_time_id)
+            & (merged_data["TimeID"] <= max_required_time_id)
+        )
+        merged_data = merged_data.loc[time_id_mask]
+
+        # Finalise and store the merged data frame.
+        merged_data["Total volume"] = (
+            merged_data["Volume"]
+            + merged_data["Previous bud volume"]
+            + merged_data["Current bud volume"]
+        )
+        merged_data["Time"] = (merged_data["TimeID"] - 1) * image_capture_interval
+        self._cycle_data = merged_data
+
+    def _merge_cycle_data_with_volumes_and_surface_area(
+            self, image_capture_interval: int, max_extra_data_points: int = 8
+        ) -> None:
+        """
+        Merge the volume data from mother cell and buds into a single 
+        DataFrame. Called when merging cycle data and Surface Area is 
+        available in all three input DataFrames.
+
+        Parameters
+        ----------
+        image_capture_interval : int
+            The interval between image captures, in minutes. Used to 
+            calculate time values.
+        max_extra_data_points : int, optional
+            The maximum number of extra data points to include before 
+            and after the relevant cell cycle time range.
+            Default is 8.
+
+        Returns
+        -------
+        None
+        """
+        # Prepare data for merging. Delete any datapoints which should be removed,
+        # interpolate any resulting missing values, and then remove the redundant 
+        # Interpolate column.
+        cell_data = self.cell_data.copy()
+        cell_data.loc[
+            cell_data["Interpolate"], ["Volume", "Surface area", "Concentration"]
+        ] = np.nan
+        cell_data.drop(columns=["Interpolate"], inplace=True)
+
+        previous_bud_data = self.previous_bud_data.copy()
+        previous_bud_data.loc[
+            previous_bud_data["Interpolate"], ["Volume", "Surface area"]
+        ] = np.nan
+        previous_bud_data.drop(columns=["Interpolate"], inplace=True)
+
+        current_bud_data = self.current_bud_data.copy()
+        current_bud_data.loc[
+            current_bud_data["Interpolate"], ["Volume", "Surface area"]
+        ] = np.nan
+        current_bud_data.drop(columns=["Interpolate"], inplace=True)
+
+        # Combine the data into a single DataFrame.
+        merged_data = cell_data.merge(
+            previous_bud_data.rename(
+                    columns={
+                        "Volume" : "Previous bud volume", 
+                        "Surface area" : "Previous bud surface area"
+                    }
+                ),
+            on="TimeID",
+            how="left"
+        ).merge(
+            current_bud_data.rename(
+                columns={
+                    "Volume" : "Current bud volume",
+                    "Surface area" : "Current bud surface area"
+                }
+            ),
+            on="TimeID",
+            how="left"
+        )
+        # Setting the index like this allows for easy access to values with specific
+        # TimeIDs using the .at[] accessor.
+        merged_data.set_index(merged_data["TimeID"].values, inplace=True)
+
+        # Ensure that bud volumes and surface areas are set to 0 up to and including the 
+        # relevant bud events. Skip this for the previous bud if Bud_0 is None.
+        if self.previous_bud_time_id is not None:
+            pre_bud_mask = merged_data["TimeID"] <= self.previous_bud_time_id
+            merged_data.loc[pre_bud_mask, "Previous bud volume"] = 0.0
+            merged_data.loc[pre_bud_mask, "Previous bud surface area"] = 0.0
+
+        pre_bud_mask = merged_data["TimeID"] <= self.current_bud_time_id
+        merged_data.loc[pre_bud_mask, "Current bud volume"] = 0.0
+        merged_data.loc[pre_bud_mask, "Current bud surface area"] = 0.0
+
+        # If Bud_0 is None, remove any time points from the previous cycle where either
+        # previous bud data is missing.
+        if self.previous_bud_time_id is None:
+            mask = (
+                (merged_data["TimeID"] < self.current_bud_time_id)
+                & (merged_data["Previous bud volume"].isna())
+            )
+            merged_data = merged_data.loc[~mask]
+        
+        # Handle any remaining NaN values, particularly the bud volumes and surface areas
+        # from budding up to the first point at which they were tracked.
+        merged_data.interpolate(method="linear", axis="rows", inplace=True)
+
+        # Ensure that bud volumes and surface areas are fixed after the relevant cell 
+        # cycle end point.
+        previous_bud_final_volume = merged_data.at[
+            self.previous_cycle_end_time_id, "Previous bud volume"
+        ]
+        previous_bud_final_surface_area = merged_data.at[
+            self.previous_cycle_end_time_id, "Previous bud surface area"
+        ]
+        post_bud_mask = merged_data["TimeID"] > self.previous_cycle_end_time_id
+        merged_data.loc[post_bud_mask, "Previous bud volume"] = previous_bud_final_volume
+        merged_data.loc[
+            post_bud_mask, "Previous bud surface area"
+        ] = previous_bud_final_surface_area
+
+        current_bud_final_volume = merged_data.at[
+            self.current_cycle_end_time_id, "Current bud volume"
+        ]
+        current_bud_final_surface_area = merged_data.at[
+            self.current_cycle_end_time_id, "Current bud surface area"
+        ]
+        post_bud_mask = merged_data["TimeID"] > self.current_cycle_end_time_id
+        merged_data.loc[post_bud_mask, "Current bud volume"] = current_bud_final_volume
+        merged_data.loc[
+            post_bud_mask, "Current bud surface area"
+        ] = current_bud_final_surface_area
+
+        # Adjust previous bud volumes and surface areas such that correct volumes are 
+        # maintained over the current cell cycle.
+        merged_data["Previous bud volume"] = (
+            merged_data["Previous bud volume"] - previous_bud_final_volume
+        )
+        merged_data["Previous bud surface area"] = (
+            merged_data["Previous bud surface area"] - previous_bud_final_surface_area
+        )
+
+        # Clip unnecessary data points.
+        min_required_time_id = (
+            self.previous_cycle_end_time_id - max_extra_data_points
+        )
+        max_required_time_id = (
+            self.current_cycle_end_time_id + max_extra_data_points
+        )
+        time_id_mask = (
+            (merged_data["TimeID"] >= min_required_time_id)
+            & (merged_data["TimeID"] <= max_required_time_id)
+        )
+        merged_data = merged_data.loc[time_id_mask]
+
+        # Finalise and store the merged data frame.
+        merged_data["Total volume"] = (
+            merged_data["Volume"]
+            + merged_data["Previous bud volume"]
+            + merged_data["Current bud volume"]
+        )
+        merged_data["Total surface area"] = (
+            merged_data["Surface Area"]
+            + merged_data["Previous bud surface area"]
+            + merged_data["Current bud surface area"]
+        )
+        merged_data["Time"] = (merged_data["TimeID"] - 1) * image_capture_interval
+        self._cycle_data = merged_data
+
+    def _plot_volume(
+            self, 
+            ax: Axes, 
+            add_title: bool = True, 
+            show_events: bool = True,
+            show_events_in_legend = True
+        ) -> None:
+        """
+        Plot volume data for validation as well as smoothed total 
+        volumes if available.
+
+        Parameters
+        ----------
+        ax : Axes
+            The matplotlib Axes object to plot on.
+        add_title : bool, optional
+            Whether to add a title to the plot. Default is True.
+        show_events : bool, optional
+            Whether to display cell cycle events on the plot. 
+            Default is True.
+        show_events_in_legend : bool, optional
+            Whether to include cell cycle events in the legend.
+            Default is True.
+
+        Returns
+        -------
+        None
+        """
+        ax.plot(self.time, self.total_volume, marker="x", label="Total volume")
+        ax.plot(self.time, self.cycle_data["Volume"], marker="x", label="Cell volume")
+
+        # Only plot the bud volumes while the buds are present.
+        previous_bud_mask = self._mask_time_ids_between(
+            self.previous_bud_time_id, self.previous_cycle_end_time_id, "both"
+        )
+        # Compensate for previous bud volume adjustment to give a more intuitive plot.
+        previous_bud_final_volume = self.previous_bud_data.loc[
+            self.previous_bud_data["TimeID"] == self.previous_cycle_end_time_id,
+            "Volume"
+        ].values[0]
+        ax.plot(
+            self.time[previous_bud_mask], 
+            self.previous_bud_volume[previous_bud_mask] + previous_bud_final_volume,
+            marker="x",
+            label="Previous bud volume"
+        )
+
+        current_bud_mask = self._mask_time_ids_between(
+            self.current_bud_time_id, self.current_cycle_end_time_id, "both"
+        )
+        ax.plot(
+            self.time[current_bud_mask], 
+            self.current_bud_volume[current_bud_mask], 
+            marker="x", 
+            label="Current bud volume"
+        )
+
+        # Plot smoothed total volume estimates if they are available. Don't raise an 
+        # error if they are not, because plotting the unsmoothed volumes alone may still 
+        # be useful.
+        if self._cycle_data_has_column("Smoothed volume"):
+            ax.plot(
+                self.time, 
+                self.smoothed_volume,
+                color="black",
+                linestyle="-",
+                label="Smoothed volume"
+            )
+        if self._cycle_data_has_column("Volume std"):
+            ax.fill_between(
+                self.time,
+                self.smoothed_volume - self.volume_std,
+                self.smoothed_volume + self.volume_std,
+                color="black", 
+                alpha=0.2, 
+                label="Volume St.Dev"
+            )
+        
+        if show_events:
+            self._plot_cycle_events(ax)
+            legend_items = ax.get_legend_handles_labels()
+            if show_events_in_legend:
+                pass
+                ax.legend(*_deduplicate_legend_items(legend_items))
+            else:
+                ax.legend(legend_items[0][:7], legend_items[1][:7])
+        else:
+            ax.legend()
+        
+        ax.set_xlabel("Time after imaging start (min)")
+        ax.set_ylabel("Volume (fL)")
+        if add_title:
+            ax.set_title(f"Cell Cycle {self.cycle_id} - Volume")
+
+    def _plot_surface_area(
+            self, 
+            ax: Axes, 
+            add_title: bool = True, 
+            show_events: bool = True,
+            show_events_in_legend = True
+        ) -> None:
+        """
+        Plot surface area data for validation as well as smoothed total 
+        surface area if available.
+
+        Parameters
+        ----------
+        ax : Axes
+            The matplotlib Axes object to plot on.
+        add_title : bool, optional
+            Whether to add a title to the plot. Default is True.
+        show_events : bool, optional
+            Whether to display cell cycle events on the plot. 
+            Default is True.
+        show_events_in_legend : bool, optional
+            Whether to include cell cycle events in the legend.
+            Default is True.
+
+        Returns
+        -------
+        None
+        """
+        ax.plot(
+            self.time, self.total_surface_area, marker="x", label="Total surface area"
+        )
+        ax.plot(
+            self.time, 
+            self.cycle_data["Surface area"], 
+            marker="x", 
+            label="Cell surface area"
+        )
+
+        # Only plot the bud surface areas while the buds are present.
+        previous_bud_mask = self._mask_time_ids_between(
+            self.previous_bud_time_id, self.previous_cycle_end_time_id, "both"
+        )
+        # Compensate for previous bud surface area adjustment to give a more intuitive 
+        # plot.
+        previous_bud_final_surface_area = self.previous_bud_data.loc[
+            self.previous_bud_data["TimeID"] == self.previous_cycle_end_time_id,
+            "Surface area"
+        ].values[0]
+        ax.plot(
+            self.time[previous_bud_mask], 
+            self.previous_bud_volume[previous_bud_mask] + previous_bud_final_surface_area,
+            marker="x",
+            label="Previous bud surface area"
+        )
+
+        current_bud_mask = self._mask_time_ids_between(
+            self.current_bud_time_id, self.current_cycle_end_time_id, "both"
+        )
+        ax.plot(
+            self.time[current_bud_mask], 
+            self.current_bud_surface_area[current_bud_mask], 
+            marker="x", 
+            label="Current bud surface area"
+        )
+
+        # Plot smoothed total surface area etimates if they are available. Don't raise an 
+        # error if they are not, because plotting the unsmoothed values alone may still 
+        # be useful.
+        if self._cycle_data_has_column("Smoothed surface area"):
+            ax.plot(
+                self.time, 
+                self.smoothed_surface_area,
+                color="black",
+                linestyle="-",
+                label="Smoothed surface area"
+            )
+        if self._cycle_data_has_column("Surface area std"):
+            ax.fill_between(
+                self.time,
+                self.smoothed_surface_area - self.surface_area_std,
+                self.smoothed_surface_area + self.surface_area_std,
+                color="black", 
+                alpha=0.2, 
+                label="Surface area St.Dev"
+            )
+        
+        if show_events:
+            self._plot_cycle_events(ax)
+            legend_items = ax.get_legend_handles_labels()
+            if show_events_in_legend:
+                pass
+                ax.legend(*_deduplicate_legend_items(legend_items))
+            else:
+                ax.legend(legend_items[0][:7], legend_items[1][:7])
+        else:
+            ax.legend()
+        
+        ax.set_xlabel("Time after imaging start (min)")
+        ax.set_ylabel("Surface area (μm²)")
+        if add_title:
+            ax.set_title(f"Cell Cycle {self.cycle_id} - Surface Area")
+
     def _validate_input_data_frames(self) -> None:
         """
         Validate that the input data frames have the required columns.
@@ -2298,60 +2532,7 @@ class CellCycle:
                     f"{name} contains missing values in columns other than TimeID.",
                     MissingDataWarning
                 )
-            
-    def _validate_cycle_events(self) -> None:
-        """
-        Validate the cycle events for consistency and correctness.
 
-        This method checks that the cycle events are correctly ordered,
-        that they reference valid TimeIDs, and that all required events
-        are present. The only exception is that "Bud_0" may be None to
-        accomodate situations where not all previous bud data is
-        available. It raises errors if any issues are found.
-
-        Raises
-        ------
-        ValueError
-            If any of the cycle events are missing, incorrectly ordered,
-            or reference TimeIDs which are not present in the input
-            `cell_data`.
-        """
-        # Validate that the essential event keys are present in cycle_events and that
-        # the corresponding TimeIDs are not overlapping and in the correct order.
-        event_keys = [
-            "Bud_0", f"{self.cycle_end_event}_0", "Bud_1", f"{self.cycle_end_event}_1"
-        ]
-        for i, key in enumerate(event_keys):
-            if key not in self.cycle_events:
-                raise ValueError(
-                    f"Cycle {self.cycle_id} missing essential cycle event: '{key}'"
-                )
-            # Check that TimeIDs are in order. Allow for "Bud_0" to be None.
-            if key == "Bud_0" and self.cycle_events["Bud_0"] is None:
-                continue
-            elif event_keys[i - 1] == "Bud_0" and self.cycle_events["Bud_0"] is None:
-                # Can't compare Bud_0 to the previous event, so skip.
-                continue
-            elif i and self.cycle_events[key] <= self.cycle_events[event_keys[i - 1]]:
-                raise ValueError(
-                    f"Cycle {self.cycle_id} event '{key}' has TimeID "
-                    f"{self.cycle_events[key]} which is less than or equal to the "
-                    f"preceding essential event '{event_keys[i - 1]}' which has TimeID "
-                    f"{self.cycle_events[event_keys[i - 1]]}."
-                )
-        
-        # Validate that all cycle events reference TimeIDs which have corresponding 
-        # data points.
-        all_time_ids = set(self.cell_data["TimeID"])
-        for key, value in self.cycle_events.items():
-            if key == "Bud_0" and value is None:
-                continue
-            elif value not in all_time_ids:
-                raise ValueError(
-                    f"Cycle {self.cycle_id} event '{key}' references TimeID: {value} "
-                    f"which is not present in cell_data."
-                )
-    
     def _validate_input_data_frame_time_ids(self) -> None:
         """
         Validate the TimeID values in the input data frames for
@@ -2529,103 +2710,6 @@ class CellCycle:
                 f"which is less than the maximum of {max_extra_data_points}.",
                 InsufficientDataWarning
             )
-        
-    # Additional methods.
-    def get_time_ids_for_events(self, event_names: Sequence[str]) -> np.ndarray[int]:
-        """
-        Retrieve TimeIDs for specified cycle events.
-
-        Parameters
-        ----------
-        event_names : Sequence[str]
-            A sequence of event names for which the corresponding 
-            TimeIDs are to be retrieved.
-
-        Returns
-        -------
-        np.ndarray[int]
-            An array of integers representing the TimeIDs corresponding 
-            to the specified event names.
-
-        Raises
-        ------
-        ValueError
-            If any of the specified event names are not found in the 
-            `cycle_events` attribute of the object.
-        """
-        time_ids = []
-        for event_name in event_names:
-            if event_name not in self.cycle_events:
-                raise ValueError(
-                    f"Cycle {self.cycle_id} missing event '{event_name}'"
-                )
-            time_ids.append(self.cycle_events[event_name])
-        return np.array(time_ids, dtype=int)
-
-    def extract_aligned_cycle_data(self) -> pd.DataFrame:
-        """
-        This method retrieves the aligned cycle data from the cycle 
-        dataset.
-
-        Returns
-        -------
-        pd.DataFrame
-            A DataFrame containing the aligned cycle data.
-
-        Raises
-        ------
-        ValueError
-            If the "Standard coordinate" column is not present in the 
-            cycle data.
-        """
-        if not self._cycle_data_has_column("Standard coordinate"):
-            raise ValueError(
-                "Cycle {self.cycle_id} does not have aligned cycle data. "
-                "Call align_to_standard_coordinate() first."
-            )
-        mask = self._cycle_data["Standard coordinate"].notna()
-        return self.cycle_data[mask].copy()
-    
-    def _cycle_data_has_column(self, column_name: str) -> bool:
-        """Check if cycle data contains a specific column."""
-        return column_name in self.cycle_data.columns
-
-    def _get_cycle_data_column_or_raise(
-            self, column_name: str, error_message: str
-        ) -> np.ndarray:
-        """
-        Get a column from cycle data or raise an error if it doesn't 
-        exist.
-        """
-        if not self._cycle_data_has_column(column_name):
-            raise ValueError(error_message)
-        return self.cycle_data[column_name].values
-
-    def _mask_time_ids_between(
-            self, begin: int, end: int, include: str
-        ) -> np.ndarray[bool]:
-        """Create a boolean mask for TimeIDs between two values."""
-        match include:
-            case "begin":
-                mask = (self.time_id >= begin) & (self.time_id < end)
-            case "end":
-                mask = (self.time_id > begin) & (self.time_id <= end)
-            case "both":
-                mask = (self.time_id >= begin) & (self.time_id <= end)
-            case "neither":
-                mask = (self.time_id > begin) & (self.time_id < end)
-            case _:
-                raise ValueError(
-                    f"Invalid include value: {include}. "
-                    "Must be one of 'begin', 'end', 'both', or 'neither'."
-                )
-        return mask
-    
-    def _drop_column(self, column: str) -> None:
-        """Remove the named column from _cycle_data if it exists."""
-        if self._cycle_data_has_column(column):
-            self._cycle_data.drop(columns=(column), inplace=True)
-
 
 class FluorescentProteinProductionRateExperiment:
     """
