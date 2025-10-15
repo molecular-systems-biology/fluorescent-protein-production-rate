@@ -63,12 +63,65 @@ class CellCycle:
     these steps in the correct order, allowing users to process
     data in one go.
     """
-    def __init__() -> None:
-        # This should be overidden in child classes.
-        raise NotImplementedError(
-            "CellCycle is a base class and should not be instantiated directly. "
-            "Please use a child class such as MotherCellCycle or DaughterCellCycle."
-        )
+    def __init__(
+            self, 
+            cycle_id: str,
+            cycle_events: Dict[str, int],
+            cycle_begin_event: str,
+            cycle_end_event: str,
+            min_extra_data_points: int = 3,
+            max_extra_data_points: int = 8,
+            **kwargs
+        ) -> None:
+        """
+        Initialize a CellCycle with experimental data.
+
+        Parameters
+        ----------
+        cycle_id : str
+            A unique identifier for the cell cycle.
+        cycle_events : Dict[str, int]
+            A dictionary mapping event names to their corresponding time
+            points. 
+        cycle_begin_event : str
+            The name of the event that marks the beginning of the cycle.
+            This should match a key in `cycle_events`.
+        cycle_end_event : str
+            The name of the event that marks the end of the cycle. This
+            should match a key in `cycle_events` which follows the
+            cycle_begin_event.
+        min_extra_data_points : int, optional
+            Minimum number of extra data points before and after the 
+            cycle's beginning and end for smoothing. Default is 3.
+        max_extra_data_points : int, optional
+            Maximum number of extra data points before and after the 
+            cycle's beginning and end for smoothing. Additional points
+            will be discarded. Default is 8.
+        **kwargs
+            Additional keyword arguments for child class initializers.
+            This base class does not use any additional arguments.
+
+        Returns
+        -------
+        None
+        """
+        self.cycle_id = cycle_id
+        self.cycle_events = cycle_events
+        self.cycle_begin_event = cycle_begin_event
+        self.cycle_end_event = cycle_end_event
+
+        # Initialize internal data containers for calculated values - these will
+        # be populated by analysis methods and typically acccessed via properties.
+        self._cycle_data: Optional[pd.DataFrame] = None
+        self._abundance_gp: Optional[GaussianProcessRegressor] = None
+        self._volume_gp: Optional[GaussianProcessRegressor] = None
+        self._surface_area_gp: Optional[GaussianProcessRegressor] = None
+
+        # Pass additional keyword arguments to child class initializers. These should
+        # handle all additional data inputs to the class.
+        self._initialise_cycle_data(**kwargs)
+
+        self.validate_input_data(min_extra_data_points, max_extra_data_points)
 
     def __bool__(self) -> bool:
         """
@@ -1848,6 +1901,12 @@ class CellCycle:
         if self._cycle_data_has_column(column):
             self._cycle_data.drop(columns=(column), inplace=True)
 
+    def _initialise_cycle_data() -> None:
+        """Initialise additional cycle data"""
+        raise NotImplementedError(
+            "_initialise_cycle_data() must be implemented in child classes."
+        )
+
 class MotherCellCycle(CellCycle):
     """
     A specialized CellCycle subclass for mother cell cycles, specified
@@ -1860,12 +1919,13 @@ class MotherCellCycle(CellCycle):
         previous_bud_data: pd.DataFrame,
         current_bud_data: pd.DataFrame,
         cycle_events: Dict[str, int],
+        cycle_begin_event: str, 
         cycle_end_event: str,
         min_extra_data_points: int = 3,
         max_extra_data_points: int = 8
     ) -> None:
         """
-        Initialize a CellCycle with experimental data.
+        Initialize a MotherCellCycle with experimental data.
 
         Parameters
         ----------
@@ -1887,10 +1947,11 @@ class MotherCellCycle(CellCycle):
             A dictionary mapping event names to their corresponding time
             points. Requires at least Bud_0 and Bud_1 key value pairs as
             well as pairs for the cycle end events.
+        cycle_begin_event : str
+            The name of the event that marks the beginning of the cell
+            cycle.
         cycle_end_event : str
             The name of the event that marks the end of the cell cycle.
-            For example, if cycle ends are defined by "Mitotic_exit_0"
-            and "Mitotic_exit_1", this should be "Mitotic_exit".
         min_extra_data_points : int, optional
             Minimum number of extra data points before and after the 
             cycle's beginning and end for smoothing. Default is 3.
@@ -1903,23 +1964,17 @@ class MotherCellCycle(CellCycle):
         -------
         None
         """
-        self.cycle_id = cycle_id
-        
-        # Data which will stored and not modified.
-        self.cell_data = cell_data.copy()
-        self.previous_bud_data = previous_bud_data.copy()
-        self.current_bud_data = current_bud_data.copy()
-        self.cycle_events = cycle_events.copy()
-        self.cycle_end_event = cycle_end_event
-
-        self.validate_input_data(min_extra_data_points, max_extra_data_points)
-        
-        # Initialize internal data containers for calculated values - these will
-        # be populated by analysis methods and typically acccessed via properties.
-        self._cycle_data: Optional[pd.DataFrame] = None
-        self._abundance_gp: Optional[GaussianProcessRegressor] = None
-        self._volume_gp: Optional[GaussianProcessRegressor] = None
-        self._surface_area_gp: Optional[GaussianProcessRegressor] = None
+        super().__init__(
+            cycle_id,
+            cycle_events,
+            cycle_begin_event,
+            cycle_end_event,
+            min_extra_data_points,
+            max_extra_data_points,
+            cell_data=cell_data,
+            previous_bud_data=previous_bud_data,
+            current_bud_data=current_bud_data
+        )
 
     @property
     def previous_bud_volume(self) -> np.ndarray:
@@ -1945,7 +2000,6 @@ class MotherCellCycle(CellCycle):
     def previous_bud_time_id(self) -> Union[int, None]:
         """TimeID of the previous bud event."""
         return self.cycle_events["Bud_0"]
-
 
     def merge_cycle_data(
             self,
@@ -2710,6 +2764,16 @@ class MotherCellCycle(CellCycle):
                 f"which is less than the maximum of {max_extra_data_points}.",
                 InsufficientDataWarning
             )
+    
+    def _initialise_cycle_data(
+            self,
+            cell_data: pd.DataFrame, 
+            previous_bud_data: pd.DataFrame, 
+            current_bud_data: pd.DataFrame
+        ) -> None:
+        self.cell_data = cell_data.copy()
+        self.previous_bud_data = previous_bud_data.copy()
+        self.current_bud_data = current_bud_data.copy()
 
 class FluorescentProteinProductionRateExperiment:
     """
