@@ -546,12 +546,12 @@ class CellCycle:
     @property
     def previous_cycle_end_time_id(self) -> int:
         """TimeID of the previous cycle end event."""
-        return self.cycle_events[f"{self.cycle_end_event}_0"]
+        return self.cycle_events[self.cycle_begin_event]
     
     @property
     def current_cycle_end_time_id(self) -> int:
         """TimeID of the current cycle end event."""
-        return self.cycle_events[f"{self.cycle_end_event}_1"]
+        return self.cycle_events[self.cycle_end_event]
     
     @property
     def cycle_duration(self) -> float:
@@ -1670,7 +1670,8 @@ class CellCycle:
     def _plot_cycle_events(self, ax: Axes) -> None:
         """Add vertical lines for cycle events to the plot."""
         styles = {
-            f"{self.cycle_end_event}" : ("black", "-"),
+            self.cycle_begin_event : ("black", "-"),
+            self.cycle_end_event : ("black", "-"),
             "Bud" : ("black", "--")
         }
         for i, (event, time_id) in enumerate(self.cycle_events.items()):
@@ -1679,7 +1680,8 @@ class CellCycle:
                 continue
 
             time = self.cycle_data.at[time_id, "Time"]
-            # Cycle end event and Bud will have these appended, remove them.
+            # Cycle begin and end events, as well as, Bud will have these appended, 
+            # remove them.
             if event.endswith(("_0", "_1")):
                 event_name = event[:-2]
             else:
@@ -1754,7 +1756,7 @@ class CellCycle:
         # Validate that the essential event keys are present in cycle_events and that
         # the corresponding TimeIDs are not overlapping and in the correct order.
         event_keys = [
-            "Bud_0", f"{self.cycle_end_event}_0", "Bud_1", f"{self.cycle_end_event}_1"
+            "Bud_0", self.cycle_begin_event, "Bud_1", self.cycle_end_event
         ]
         for i, key in enumerate(event_keys):
             if key not in self.cycle_events:
@@ -2648,12 +2650,12 @@ class MotherCellCycle(CellCycle):
                 f"{min_time_id}, which is before the bud event in the previous cycle: "
                 f"(Bud_0: {self.cycle_events['Bud_0']})."
             )
-        if max_time_id < self.cycle_events[f"{self.cycle_end_event}_0"]:
+        if max_time_id < self.cycle_events[self.cycle_begin_event]:
             raise ValueError(
                 f"Cycle {self.cycle_id} previous_bud_data TimeIDs end at "
                 f"{max_time_id}, which is before the cycle end event of "
-                f"the previous cycle: ({self.cycle_end_event}_0: "
-                f"{self.cycle_events[f'{self.cycle_end_event}_0']})."
+                f"the previous cycle: ({self.cycle_begin_event}: "
+                f"{self.cycle_events[self.cycle_begin_event]})."
             )
         
         min_time_id = self.current_bud_data["TimeID"].min()
@@ -2664,12 +2666,12 @@ class MotherCellCycle(CellCycle):
                 f"{min_time_id}, which is before the bud event in this cycle: "
                 f"(Bud_1: {self.cycle_events['Bud_1']})."
             )
-        if max_time_id < self.cycle_events[f"{self.cycle_end_event}_1"]:
+        if max_time_id < self.cycle_events[self.cycle_end_event]:
             raise ValueError(
                 f"Cycle {self.cycle_id} current_bud_data TimeIDs end at "
                 f"{max_time_id}, which is before the cycle end event of "
-                f"this cycle: ({self.cycle_end_event}_1: "
-                f"{self.cycle_events[f'{self.cycle_end_event}_1']})."
+                f"this cycle: ({self.cycle_end_event}: "
+                f"{self.cycle_events[self.cycle_end_event]})."
             )
         
     def _validate_sufficient_extra_data_points(
@@ -2707,9 +2709,9 @@ class MotherCellCycle(CellCycle):
             cycle end events is less than the recommended maximum but 
             greater than or equal to the minimum.
         """
-        previous_cycle_end_time_id = self.cycle_events[f"{self.cycle_end_event}_0"]
+        cycle_begin_time_id = self.cycle_events[self.cycle_begin_event]
         extra_previous_data_points = (
-            previous_cycle_end_time_id - self.cell_data["TimeID"].min()
+            cycle_begin_time_id - self.cell_data["TimeID"].min()
         )
         if extra_previous_data_points < min_extra_data_points:
             raise ValueError(
@@ -2729,7 +2731,7 @@ class MotherCellCycle(CellCycle):
         # to the previous bud event.
         if self.cycle_events["Bud_0"] is None:
             extra_previous_bud_data_points = (
-                previous_cycle_end_time_id - self.previous_bud_data["TimeID"].min()
+                cycle_begin_time_id - self.previous_bud_data["TimeID"].min()
             )
             if extra_previous_bud_data_points < min_extra_data_points:
                 raise ValueError(
@@ -2747,7 +2749,7 @@ class MotherCellCycle(CellCycle):
                     InsufficientDataWarning
                 )
 
-        current_cycle_end_time_id = self.cycle_events[f"{self.cycle_end_event}_1"]
+        current_cycle_end_time_id = self.cycle_events[self.cycle_end_event]
         extra_current_data_points = (
             self.cell_data["TimeID"].max() - current_cycle_end_time_id
         )
