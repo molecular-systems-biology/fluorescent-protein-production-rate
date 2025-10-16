@@ -1,4 +1,5 @@
 from .fluorescent_protein_production_rate import (
+    CellCycle,
     MotherCellCycle,
     DaughterCellCycle,
     FluorescentProteinProductionRateExperiment,
@@ -6,6 +7,7 @@ from .fluorescent_protein_production_rate import (
 )
 
 __all__ = [
+    "CellCycle",
     "MotherCellCycle",
     "DaughterCellCycle",
     "FluorescentProteinProductionRateExperiment", 
