@@ -1937,7 +1937,7 @@ class MotherCellCycle(CellCycle):
         cycle_id : str
             A unique identifier for the cell cycle.
         cell_data : pd.DataFrame
-            DataFrame containing data for the mother cell. Requires at
+            DataFrame containing data for the cell. Requires at
             least integer TimeID, float Volume, float Concentration and
             boolean Interpolate columns.
         previous_bud_data : pd.DataFrame
