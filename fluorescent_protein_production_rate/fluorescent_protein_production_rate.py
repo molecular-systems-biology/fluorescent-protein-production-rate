@@ -1739,8 +1739,8 @@ class CellCycle:
     def _plot_cycle_events(self, ax: Axes) -> None:
         """Add vertical lines for cycle events to the plot."""
         styles = {
-            self.cycle_begin_event : ("black", "-"),
-            self.cycle_end_event : ("black", "-"),
+            f"{self.cycle_begin_event[:-2]}" : ("black", "-"),
+            f"{self.cycle_end_event[:-2]}" : ("black", "-"),
             "Bud" : ("black", "--")
         }
         for i, (event, time_id) in enumerate(self.cycle_events.items()):
