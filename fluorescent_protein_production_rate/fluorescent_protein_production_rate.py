@@ -2780,6 +2780,70 @@ class MotherCellCycle(CellCycle):
         self.previous_bud_data = previous_bud_data.copy()
         self.current_bud_data = current_bud_data.copy()
 
+
+class DaughterCellCycle(CellCycle):
+    """
+    A specialised CellCycle subclass for daughter cell cycles, defined
+    as the first cycle that cell undergoes.
+    """
+    def __init__(
+        self, 
+        cycle_id: str,
+        cell_data: pd.DataFrame,
+        current_bud_data: pd.DataFrame,
+        cycle_events: Dict[str, int],
+        cycle_begin_event: str, 
+        cycle_end_event: str,
+        min_extra_data_points: int = 3,
+        max_extra_data_points: int = 8
+    ) -> None:
+        """
+        Initialize a DaughterCellCycle with experimental data.
+
+        Parameters
+        ----------
+        cycle_id : str
+            A unique identifier for the cell cycle.
+        cell_data : pd.DataFrame
+            DataFrame containing data for the cell. Requires at
+            least integer TimeID, float Volume, float Concentration and
+            boolean Interpolate columns.
+        current_bud_data : pd.DataFrame
+            DataFrame containing data for the current bud. Requires at
+            least integer TimeID, float Volume and boolean Interpolate
+            columns.
+        cycle_events : Dict[str, int]
+            A dictionary mapping event names to their corresponding time
+            points. Requires at least the Bud_1 key value pair as
+            well as pairs for the cycle begin and end events.
+        cycle_begin_event : str
+            The name of the event that marks the beginning of the cell
+            cycle.
+        cycle_end_event : str
+            The name of the event that marks the end of the cell cycle.
+        min_extra_data_points : int, optional
+            Minimum number of extra data points before and after the 
+            cycle's beginning and end for smoothing. Default is 3.
+        max_extra_data_points : int, optional
+            Maximum number of extra data points before and after the 
+            cycle's beginning and end for smoothing. Additional points
+            will be discarded. Default is 8.
+
+        Returns
+        -------
+        None
+        """
+        super().__init__(
+            cycle_id,
+            cycle_events,
+            cycle_begin_event,
+            cycle_end_event,
+            min_extra_data_points,
+            max_extra_data_points,
+            cell_data=cell_data,
+            current_bud_data=current_bud_data
+        )
+
 class FluorescentProteinProductionRateExperiment:
     """
     Represents a complete experiment with multiple cell cycles.
