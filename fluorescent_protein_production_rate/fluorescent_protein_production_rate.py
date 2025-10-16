@@ -3337,6 +3337,7 @@ class FluorescentProteinProductionRateExperiment:
             self, 
             experiment_id: str,
             image_capture_interval: int,
+            cycle_begin_event: str,
             cycle_end_event: str,
             min_extra_data_points: int = 3,
             max_extra_data_points: int = 8,
@@ -3352,6 +3353,9 @@ class FluorescentProteinProductionRateExperiment:
         image_capture_interval : int
             The time interval (in minutes or other units) between 
             consecutive image captures.
+        cycle_begin_event : str
+            The name of the event that marks the beginning of a cell 
+            cycle.
         cycle_end_event : str
             The name of the event that marks the end of a cell cycle.
         min_extra_data_points : int, optional
@@ -3370,6 +3374,7 @@ class FluorescentProteinProductionRateExperiment:
         """
         self.experiment_id = experiment_id
         self.image_capture_interval = image_capture_interval
+        self.cycle_begin_event = cycle_begin_event
         self.cycle_end_event = cycle_end_event
         self.min_extra_data_points = min_extra_data_points
         self.max_extra_data_points = max_extra_data_points
@@ -4644,6 +4649,7 @@ class FluorescentProteinProductionRateExperiment:
                 previous_bud_data=previous_bud_data,
                 current_bud_data=current_bud_data,
                 cycle_events=cycle_events,
+                cycle_begin_event=self.cycle_begin_event,
                 cycle_end_event=self.cycle_end_event,
                 min_extra_data_points=self.min_extra_data_points,
                 max_extra_data_points=self.max_extra_data_points
@@ -4707,6 +4713,7 @@ class FluorescentProteinProductionRateExperiment:
                 cell_data=cell_data,
                 current_bud_data=current_bud_data,
                 cycle_events=cycle_events,
+                cycle_begin_event=self.cycle_begin_event,
                 cycle_end_event=self.cycle_end_event,
                 min_extra_data_points=self.min_extra_data_points,
                 max_extra_data_points=self.max_extra_data_points
