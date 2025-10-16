@@ -45,7 +45,8 @@ class CellCycle:
 
     Notes
     -----
-    The main analysis methods need to be called in the following order:
+    The main analysis methods for calculating protein production rates
+    need to be called in the following order:
     1. `merge_cycle_data()`: Combines cell and bud data into a unified 
         time series.
     2. `calculate_abundance()`: Computes total protein abundance from
