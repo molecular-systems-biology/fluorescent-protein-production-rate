@@ -60,8 +60,8 @@ class CellCycle:
     6. `calculate_volume_specific_production_rate()`: Computes
         volume-specific production rates.
 
-    The convenience method `calculate_all_cycle_values()` runs all of 
-    these steps in the correct order, allowing users to process
+    The convenience method `calculate_protein_production_rates()` runs 
+    all of these steps in the correct order, allowing users to process
     data in one go.
     """
     # Names of required input DataFrames that must be provided as keyword
@@ -937,7 +937,7 @@ class CellCycle:
         self._cycle_data["Specific production rate"] = specific_production_rate
         return self
     
-    def calculate_all_cycle_values(
+    def calculate_protein_production_rates(
             self, 
             image_capture_interval: int,
             max_extra_data_points: int = 8,
@@ -3878,7 +3878,7 @@ class FluorescentProteinProductionRateExperiment:
             raise e
         return self
     
-    def calculate_all_cycle_values(
+    def calculate_protein_prodution_rates(
             self,
             calculate_smoothed_abundance_kwargs: Dict[str, Any] = {},
             calculate_production_rate_kwargs: Dict[str, Any] = {},
@@ -3919,7 +3919,7 @@ class FluorescentProteinProductionRateExperiment:
             )
         try:
             for cycle in self:
-                cycle.calculate_all_cycle_values(
+                cycle.calculate_protein_production_rates(
                     self.image_capture_interval,
                     self.max_extra_data_points,
                     calculate_smoothed_abundance_kwargs,
@@ -3928,8 +3928,8 @@ class FluorescentProteinProductionRateExperiment:
                 )
         except Exception as e:
             e.add_note(
-                "This error occurred while running calculate_all_cycle_values() for "
-                f"cycle {cycle.cycle_id} in experiment {self.experiment_id}."
+                "This error occurred while running calculate_protein_production_rates() "
+                f"for cycle {cycle.cycle_id} in experiment {self.experiment_id}."
             )
             raise e
         return self
