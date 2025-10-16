@@ -3316,9 +3316,10 @@ class FluorescentProteinProductionRateExperiment:
     """
     Represents a complete experiment with multiple cell cycles.
     
-    This class coordinates analysis across multiple cell cycles, 
-    providing methods for batch processing and experiment-wide analysis 
-    such as Gaussian process fitting across all cycles.
+    This class coordinates analysis across multiple cell cycles (either
+    all mother cell cycle or daughter cycles), providing methods for 
+    batch processing and experiment-wide analysis such as Gaussian 
+    process fitting across all cycles.
 
     Notes
     -----
@@ -3338,7 +3339,8 @@ class FluorescentProteinProductionRateExperiment:
             image_capture_interval: int,
             cycle_end_event: str,
             min_extra_data_points: int = 3,
-            max_extra_data_points: int = 8
+            max_extra_data_points: int = 8,
+            cycle_type: str = "mother"
         ) -> None:
         """
         Initialize an experiment container.
@@ -3358,6 +3360,9 @@ class FluorescentProteinProductionRateExperiment:
         max_extra_data_points : int, optional
             The maximum number of extra data points which before and
             after each cell cycle. Default is 8.
+        cycle_type: str, optional
+            The type of cell cycles in the experiment, either "mother"
+            or "daughter". Default is "mother".
 
         Returns
         -------
@@ -3368,6 +3373,7 @@ class FluorescentProteinProductionRateExperiment:
         self.cycle_end_event = cycle_end_event
         self.min_extra_data_points = min_extra_data_points
         self.max_extra_data_points = max_extra_data_points
+        self.cycle_type = cycle_type.lower()
         
         # Container for all cell cycles in this experiment
         self._cell_cycles: Dict[str, CellCycle] = {}
@@ -3384,6 +3390,17 @@ class FluorescentProteinProductionRateExperiment:
         self._volume_growth_rate_gp: Optional[GaussianProcessRegressor] = None
         self._surface_area_growth_rate_gp: Optional[GaussianProcessRegressor] = None
         self._concentration_gp: Optional[GaussianProcessRegressor] = None
+
+        match self.cycle_type:
+            case "mother":
+                self.add_cell_cycle = self._add_mother_cell_cycle
+            case "daughter":
+                self.add_cell_cycle = self._add_daughter_cell_cycle
+            case _:
+                raise ValueError(
+                    f"cycle_type must be either 'mother' or 'daughter', got "
+                    f"'{cycle_type}'."
+                )
 
     def __bool__(self) -> bool:
         """Check if the experiment has any cell cycles."""
@@ -3597,76 +3614,7 @@ class FluorescentProteinProductionRateExperiment:
                 "Call fit_population_gp(gp_type='concentration') first."
             )
         return self._concentration_gp
-    
 
-    def add_cell_cycle(
-            self, 
-            cycle_id: str,
-            mother_data: pd.DataFrame,
-            previous_bud_data: pd.DataFrame,
-            current_bud_data: pd.DataFrame,
-            cycle_events: Dict[str, int]
-        ) -> CellCycle:
-        """
-        Add a new cell cycle to the experiment.
-
-        Parameters
-        ----------
-        cycle_id : str
-            Unique identifier for the cell cycle.
-        mother_data : pd.DataFrame
-            DataFrame containing data for the mother cell. Requires at
-            least integer TimeID, float Volume, float Concentration and
-            boolean Interpolate columns.
-        previous_bud_data : pd.DataFrame
-            DataFrame containing data for the previous bud. Requires at
-            least integer TimeID, float Volume and boolean Interpolate
-            columns.
-        current_bud_data : pd.DataFrame
-            DataFrame containing data for the current bud. Requires at
-            least integer TimeID, float Volume and boolean Interpolate
-            columns.
-        cycle_events : Dict[str, int]
-            A dictionary mapping event names to their corresponding time
-            points. Requires at least Bud_0 and Bud_1 key value pairs as
-            well as pairs for the cycle end events.
-
-        Returns
-        -------
-        CellCycle
-            The newly created CellCycle object.
-
-        Raises
-        ------
-        ValueError
-            If a cell cycle with the given `cycle_id` already exists in 
-            the experiment.
-
-        """
-        if cycle_id in self.cell_cycles:
-            raise ValueError(f"Cell cycle '{cycle_id}' already exists in experiment")
-        
-        try:
-            # Create and add the CellCycle object.
-            cell_cycle = CellCycle(
-                cycle_id=cycle_id,
-                mother_data=mother_data,
-                previous_bud_data=previous_bud_data,
-                current_bud_data=current_bud_data,
-                cycle_events=cycle_events,
-                cycle_end_event=self.cycle_end_event,
-                min_extra_data_points=self.min_extra_data_points,
-                max_extra_data_points=self.max_extra_data_points
-            )
-        except Exception as e:
-            e.add_note(
-                f"This error occurred while creating CellCycle with "
-                f"cycle_id: {cycle_id} in experiment {self.experiment_id}."
-            )
-            raise e
-        
-        self._cell_cycles[cycle_id] = cell_cycle
-        return cell_cycle
     
     def get_cell_cycle(self, cycle_id: str) -> CellCycle:
         """
@@ -4640,6 +4588,138 @@ class FluorescentProteinProductionRateExperiment:
         for cycle in filtered_experiment:
             cycle._drop_column("Standard coordinate")
         return filtered_experiment
+
+    def _add_mother_cell_cycle(
+            self, 
+            cycle_id: str,
+            cell_data: pd.DataFrame,
+            previous_bud_data: pd.DataFrame,
+            current_bud_data: pd.DataFrame,
+            cycle_events: Dict[str, int]
+        ) -> MotherCellCycle:
+        """
+        Add a new mother cell cycle to the experiment.
+
+        Parameters
+        ----------
+        cycle_id : str
+            Unique identifier for the cell cycle.
+        cell_data : pd.DataFrame
+            DataFrame containing data for the cell. Requires at least 
+            integer TimeID, float Volume, float Concentration and
+            boolean Interpolate columns.
+        previous_bud_data : pd.DataFrame
+            DataFrame containing data for the previous bud. Requires at
+            least integer TimeID, float Volume and boolean Interpolate
+            columns.
+        current_bud_data : pd.DataFrame
+            DataFrame containing data for the current bud. Requires at
+            least integer TimeID, float Volume and boolean Interpolate
+            columns.
+        cycle_events : Dict[str, int]
+            A dictionary mapping event names to their corresponding time
+            points. Requires at least Bud_0 and Bud_1 key value pairs as
+            well as pairs for the cycle end events.
+
+        Returns
+        -------
+        MotherCellCycle
+            The newly created MotherCellCycle object.
+
+        Raises
+        ------
+        ValueError
+            If a cell cycle with the given `cycle_id` already exists in 
+            the experiment.
+
+        """
+        if cycle_id in self.cell_cycles:
+            raise ValueError(f"Cell cycle '{cycle_id}' already exists in experiment")
+        
+        try:
+            # Create and add the MotherCellCycle object.
+            cell_cycle = MotherCellCycle(
+                cycle_id=cycle_id,
+                cell_data=cell_data,
+                previous_bud_data=previous_bud_data,
+                current_bud_data=current_bud_data,
+                cycle_events=cycle_events,
+                cycle_end_event=self.cycle_end_event,
+                min_extra_data_points=self.min_extra_data_points,
+                max_extra_data_points=self.max_extra_data_points
+            )
+        except Exception as e:
+            e.add_note(
+                f"This error occurred while creating CellCycle with "
+                f"cycle_id: {cycle_id} in experiment {self.experiment_id}."
+            )
+            raise e
+        
+        self._cell_cycles[cycle_id] = cell_cycle
+        return cell_cycle
+    
+    def _add_daughter_cell_cycle(
+            self, 
+            cycle_id: str,
+            cell_data: pd.DataFrame,
+            current_bud_data: pd.DataFrame,
+            cycle_events: Dict[str, int]
+        ) -> DaughterCellCycle:
+        """
+        Add a new daughter cell cycle to the experiment.
+
+        Parameters
+        ----------
+        cycle_id : str
+            Unique identifier for the cell cycle.
+        cell_data : pd.DataFrame
+            DataFrame containing data for the cell. Requires at least 
+            integer TimeID, float Volume, float Concentration and
+            boolean Interpolate columns.
+        current_bud_data : pd.DataFrame
+            DataFrame containing data for the current bud. Requires at
+            least integer TimeID, float Volume and boolean Interpolate
+            columns.
+        cycle_events : Dict[str, int]
+            A dictionary mapping event names to their corresponding time
+            points. Requires at least Bud_0 and Bud_1 key value pairs as
+            well as pairs for the cycle end events.
+
+        Returns
+        -------
+        DaughterCellCycle
+            The newly created DaughterCellCycle object.
+
+        Raises
+        ------
+        ValueError
+            If a cell cycle with the given `cycle_id` already exists in 
+            the experiment.
+
+        """
+        if cycle_id in self.cell_cycles:
+            raise ValueError(f"Cell cycle '{cycle_id}' already exists in experiment")
+        
+        try:
+            # Create and add the MotherCellCycle object.
+            cell_cycle = DaughterCellCycle(
+                cycle_id=cycle_id,
+                cell_data=cell_data,
+                current_bud_data=current_bud_data,
+                cycle_events=cycle_events,
+                cycle_end_event=self.cycle_end_event,
+                min_extra_data_points=self.min_extra_data_points,
+                max_extra_data_points=self.max_extra_data_points
+            )
+        except Exception as e:
+            e.add_note(
+                f"This error occurred while creating CellCycle with "
+                f"cycle_id: {cycle_id} in experiment {self.experiment_id}."
+            )
+            raise e
+        
+        self._cell_cycles[cycle_id] = cell_cycle
+        return cell_cycle
 
 
 def get_version() -> Dict[str, str]:
