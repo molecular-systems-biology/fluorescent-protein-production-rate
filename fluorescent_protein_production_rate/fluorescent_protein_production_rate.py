@@ -1858,59 +1858,15 @@ class CellCycle:
                     f"{name} contains missing values in columns other than TimeID.",
                     MissingDataWarning
                 )
-            
+
     def _validate_cycle_events(self) -> None:
         """
         Validate the cycle events for consistency and correctness.
-
-        This method checks that the cycle events are correctly ordered,
-        that they reference valid TimeIDs, and that all required events
-        are present. The only exception is that "Bud_0" may be None to
-        accomodate situations where not all previous bud data is
-        available. It raises errors if any issues are found.
-
-        Raises
-        ------
-        ValueError
-            If any of the cycle events are missing, incorrectly ordered,
-            or reference TimeIDs which are not present in the input
-            `cell_data`.
         """
-        # Validate that the essential event keys are present in cycle_events and that
-        # the corresponding TimeIDs are not overlapping and in the correct order.
-        event_keys = [
-            "Bud_0", self.cycle_begin_event, "Bud_1", self.cycle_end_event
-        ]
-        for i, key in enumerate(event_keys):
-            if key not in self.cycle_events:
-                raise ValueError(
-                    f"Cycle {self.cycle_id} missing essential cycle event: '{key}'"
-                )
-            # Check that TimeIDs are in order. Allow for "Bud_0" to be None.
-            if key == "Bud_0" and self.cycle_events["Bud_0"] is None:
-                continue
-            elif event_keys[i - 1] == "Bud_0" and self.cycle_events["Bud_0"] is None:
-                # Can't compare Bud_0 to the previous event, so skip.
-                continue
-            elif i and self.cycle_events[key] <= self.cycle_events[event_keys[i - 1]]:
-                raise ValueError(
-                    f"Cycle {self.cycle_id} event '{key}' has TimeID "
-                    f"{self.cycle_events[key]} which is less than or equal to the "
-                    f"preceding essential event '{event_keys[i - 1]}' which has TimeID "
-                    f"{self.cycle_events[event_keys[i - 1]]}."
-                )
-        
-        # Validate that all cycle events reference TimeIDs which have corresponding 
-        # data points.
-        all_time_ids = set(self.cell_data["TimeID"])
-        for key, value in self.cycle_events.items():
-            if key == "Bud_0" and value is None:
-                continue
-            elif value not in all_time_ids:
-                raise ValueError(
-                    f"Cycle {self.cycle_id} event '{key}' references TimeID: {value} "
-                    f"which is not present in cell_data."
-                )
+        raise NotImplementedError(
+            "_validate_cycle_events() must be implemented in child classes."
+        )
+
     def _validate_input_data_frame_time_ids() -> None:
         """
         Validate the TimeID values in the input data frames for
@@ -2591,6 +2547,59 @@ class MotherCellCycle(CellCycle):
         if add_title:
             ax.set_title(f"Cell Cycle {self.cycle_id} - Surface Area")
 
+    def _validate_cycle_events(self) -> None:
+        """
+        Validate the cycle events for consistency and correctness.
+
+        This method checks that the cycle events are correctly ordered,
+        that they reference valid TimeIDs, and that all required events
+        are present. The only exception is that "Bud_0" may be None to
+        accomodate situations where not all previous bud data is
+        available. It raises errors if any issues are found.
+
+        Raises
+        ------
+        ValueError
+            If any of the cycle events are missing, incorrectly ordered,
+            or reference TimeIDs which are not present in the input
+            `cell_data`.
+        """
+        # Validate that the essential event keys are present in cycle_events and that
+        # the corresponding TimeIDs are not overlapping and in the correct order.
+        event_keys = [
+            "Bud_0", self.cycle_begin_event, "Bud_1", self.cycle_end_event
+        ]
+        for i, key in enumerate(event_keys):
+            if key not in self.cycle_events:
+                raise ValueError(
+                    f"Cycle {self.cycle_id} missing essential cycle event: '{key}'"
+                )
+            # Check that TimeIDs are in order. Allow for "Bud_0" to be None.
+            if key == "Bud_0" and self.cycle_events["Bud_0"] is None:
+                continue
+            elif event_keys[i - 1] == "Bud_0" and self.cycle_events["Bud_0"] is None:
+                # Can't compare Bud_0 to the previous event, so skip.
+                continue
+            elif i and self.cycle_events[key] <= self.cycle_events[event_keys[i - 1]]:
+                raise ValueError(
+                    f"Cycle {self.cycle_id} event '{key}' has TimeID "
+                    f"{self.cycle_events[key]} which is less than or equal to the "
+                    f"preceding essential event '{event_keys[i - 1]}' which has TimeID "
+                    f"{self.cycle_events[event_keys[i - 1]]}."
+                )
+        
+        # Validate that all cycle events reference TimeIDs which have corresponding 
+        # data points.
+        all_time_ids = set(self.cell_data["TimeID"])
+        for key, value in self.cycle_events.items():
+            if key == "Bud_0" and value is None:
+                continue
+            elif value not in all_time_ids:
+                raise ValueError(
+                    f"Cycle {self.cycle_id} event '{key}' references TimeID: {value} "
+                    f"which is not present in cell_data."
+                )
+
     def _validate_input_data_frame_time_ids(self) -> None:
         """
         Validate the TimeID values in the input data frames for
@@ -3182,6 +3191,49 @@ class DaughterCellCycle(CellCycle):
         ax.set_ylabel("Surface area (μm²)")
         if add_title:
             ax.set_title(f"Cell Cycle {self.cycle_id} - Surface Area")
+
+    def _validate_cycle_events(self) -> None:
+        """
+        Validate the cycle events for consistency and correctness.
+
+        This method checks that the cycle events are correctly ordered,
+        that they reference valid TimeIDs, and that all required events
+        are present. It raises errors if any issues are found.
+
+        Raises
+        ------
+        ValueError
+            If any of the cycle events are missing, incorrectly ordered,
+            or reference TimeIDs which are not present in the input
+            `cell_data`.
+        """
+        # Validate that the essential event keys are present in cycle_events and that
+        # the corresponding TimeIDs are not overlapping and in the correct order.
+        event_keys = [self.cycle_begin_event, "Bud_1", self.cycle_end_event]
+        for i, key in enumerate(event_keys):
+            if key not in self.cycle_events:
+                raise ValueError(
+                    f"Cycle {self.cycle_id} missing essential cycle event: '{key}'"
+                )
+            if i and self.cycle_events[key] <= self.cycle_events[event_keys[i - 1]]:
+                raise ValueError(
+                    f"Cycle {self.cycle_id} event '{key}' has TimeID "
+                    f"{self.cycle_events[key]} which is less than or equal to the "
+                    f"preceding essential event '{event_keys[i - 1]}' which has TimeID "
+                    f"{self.cycle_events[event_keys[i - 1]]}."
+                )
+        
+        # Validate that all cycle events reference TimeIDs which have corresponding 
+        # data points.
+        all_time_ids = set(self.cell_data["TimeID"])
+        for key, value in self.cycle_events.items():
+            if key == "Bud_0" and value is None:
+                continue
+            elif value not in all_time_ids:
+                raise ValueError(
+                    f"Cycle {self.cycle_id} event '{key}' references TimeID: {value} "
+                    f"which is not present in cell_data."
+                )
 
     def _validate_input_data_frame_time_ids(self) -> None:
         """
