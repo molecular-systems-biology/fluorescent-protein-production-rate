@@ -3883,7 +3883,7 @@ class FluorescentProteinProductionRateExperiment:
             raise e
         return self
     
-    def calculate_protein_prodution_rates(
+    def calculate_protein_production_rates(
             self,
             calculate_smoothed_abundance_kwargs: Dict[str, Any] = {},
             calculate_production_rate_kwargs: Dict[str, Any] = {},
