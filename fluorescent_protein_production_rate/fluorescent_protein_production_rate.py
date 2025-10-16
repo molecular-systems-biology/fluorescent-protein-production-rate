@@ -1913,7 +1913,9 @@ class CellCycle:
 class MotherCellCycle(CellCycle):
     """
     A specialized CellCycle subclass for mother cell cycles, specified
-    as any cell cycle after the first that a cell undergoes.
+    as any cell cycle after the first that a cell undergoes. The main
+    changes relative to CellCycle relate to data for the previous bud
+    which is tracked in addition to the current bud and mother cell.
     """
     def __init__(
         self, 
