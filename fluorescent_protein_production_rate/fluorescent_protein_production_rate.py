@@ -4,8 +4,8 @@ import copy
 import hashlib
 import inspect
 from typing import (
-    Any, Self, Dict, Tuple, List, Optional, Iterator, Sequence, Callable,
-    Union
+    Any, Self, Dict, Tuple, List, Set, Optional, Iterator, Sequence, 
+    Callable, Union
 )
 from warnings import warn
 
@@ -64,15 +64,20 @@ class CellCycle:
     these steps in the correct order, allowing users to process
     data in one go.
     """
+    # Names of required input DataFrames that must be provided as keyword
+    # arguments to __init__(). Child classes should override this with the
+    # specific data they need however cell_data should always be present.
+    required_input_dfs = {"cell_data"}
+
     def __init__(
             self, 
             cycle_id: str,
+            input_dfs: Dict[str, pd.DataFrame],
             cycle_events: Dict[str, int],
             cycle_begin_event: str,
             cycle_end_event: str,
             min_extra_data_points: int = 3,
-            max_extra_data_points: int = 8,
-            **kwargs
+            max_extra_data_points: int = 8
         ) -> None:
         """
         Initialize a CellCycle with experimental data.
@@ -81,9 +86,15 @@ class CellCycle:
         ----------
         cycle_id : str
             A unique identifier for the cell cycle.
+        input_dfs : Dict[str, pd.DataFrame]
+            Input DataFrames containing TimeID, Volume, Concentration 
+            (for cells, not buds), Interpolate status, and optionally 
+            Surface area data. The specific data required should be 
+            detailed in the child class `__init__()` methods and keys
+            should match the names in `required_input_dfs`.
         cycle_events : Dict[str, int]
             A dictionary mapping event names to their corresponding time
-            points. 
+            points.
         cycle_begin_event : str
             The name of the event that marks the beginning of the cycle.
             This should match a key in `cycle_events`.
@@ -98,12 +109,6 @@ class CellCycle:
             Maximum number of extra data points before and after the 
             cycle's beginning and end for smoothing. Additional points
             will be discarded. Default is 8.
-        **kwargs
-            Additional keyword arguments for input DataFrames containing
-            TimeID, Volume, Concentration (for cells, not buds), 
-            Interpolate status, and optionally Surface area data.
-            The specific data required should be detailed in the child
-            class __init__() methods.
 
         Returns
         -------
@@ -124,10 +129,12 @@ class CellCycle:
         # Store additional DataFrames. Keeping together as a Dict allows for iterating
         # over them in other methods.
         self.input_dfs = {}
-        for key, value in kwargs.items():
+        # Store copies to avoid accidental overwriting of input data. Create properties
+        # for each input DataFrame to allow easy access.
+        for key, value in input_dfs.items():
             self.input_dfs[key] = value.copy()
             setattr(self, key, self.input_dfs[key])
-
+        
         self.validate_input_data(min_extra_data_points, max_extra_data_points)
 
     def __bool__(self) -> bool:
@@ -1789,14 +1796,68 @@ class CellCycle:
             min_extra_data_points, max_extra_data_points
         )
         
-    def _validate_input_data_frames() -> None:
+    def _validate_input_data_frames(self) -> None:
         """
-        Validate that the input data frames have the required columns.
-        Warn if there is any missing data in columns other than TimeID.
+        Validate that all required input data frames are present and 
+        have the required columns. Warn if there is any missing data in 
+        columns other than TimeID.
+
+        Raises
+        ------
+        ValueError
+            If any of the input DataFrames are empty, or if they are 
+            missing any of the required columns.
+
+        Warns
+        -----
+        MissingDataWarning
+            If any data frame contains missing values in columns other 
+            than `TimeID`.
         """
-        raise NotImplementedError(
-            "_validate_input_data_frames() must be implemented in child classes."
-        )
+        present_input_dfs = set(self.input_dfs.keys())
+        if not present_input_dfs == self.required_input_dfs:
+            raise ValueError(
+                f"Cycle {self.cycle_id} input data frames must include only: "
+                f"{self.required_input_dfs}. Provided: {present_input_dfs}"
+            )
+        
+        for name, df in self.input_dfs.items():
+            if df.empty:
+                raise ValueError(
+                    f"Cycle {self.cycle_id} data frame {name} is empty."
+                )
+        
+        required_cell_cols = {"TimeID", "Volume", "Concentration", "Interpolate"}
+        required_bud_cols = {"TimeID", "Volume", "Interpolate"}
+        
+        # Cell data should always be present.
+        if not required_cell_cols.issubset(self.cell_data.columns):
+            missing = required_cell_cols - set(self.cell_data.columns)
+            raise ValueError(
+                f"Cycle {self.cycle_id} data frame cell_data missing required columns: "
+                f"{missing}"
+            )
+        
+        # Assume any additional data frames are for buds if they are present.
+        if len(self.required_input_dfs) > 1:
+            for name in self.required_input_dfs - {"cell_data"}:
+                df = self.input_dfs[name]
+                if not required_bud_cols.issubset(df.columns):
+                    missing = required_bud_cols - set(df.columns)
+                    raise ValueError(
+                        f"Cycle {self.cycle_id} data frame "
+                        f"{name} missing columns: {missing}"
+                    )
+
+        # Warn if there are any missing values in columns other than TimeID.
+        for name, df in self.input_dfs.items():
+            temp = df.drop(columns=["TimeID"])
+            if temp.isna().any().any():
+                warn(
+                    f"Cycle {self.cycle_id} data frame "
+                    f"{name} contains missing values in columns other than TimeID.",
+                    MissingDataWarning
+                )
             
     def _validate_cycle_events(self) -> None:
         """
@@ -1973,6 +2034,8 @@ class MotherCellCycle(CellCycle):
     changes relative to CellCycle relate to data for the previous bud
     which is tracked in addition to the current bud and mother cell.
     """
+    required_input_dfs = {"cell_data", "previous_bud_data", "current_bud_data"}
+
     def __init__(
         self, 
         cycle_id: str,
@@ -2027,14 +2090,16 @@ class MotherCellCycle(CellCycle):
         """
         super().__init__(
             cycle_id,
+            {
+                "cell_data" : cell_data,
+                "previous_bud_data" : previous_bud_data,
+                "current_bud_data" :current_bud_data
+            },
             cycle_events,
             cycle_begin_event,
             cycle_end_event,
             min_extra_data_points,
             max_extra_data_points,
-            cell_data=cell_data,
-            previous_bud_data=previous_bud_data,
-            current_bud_data=current_bud_data
         )
 
     @property
@@ -2526,64 +2591,6 @@ class MotherCellCycle(CellCycle):
         if add_title:
             ax.set_title(f"Cell Cycle {self.cycle_id} - Surface Area")
 
-    def _validate_input_data_frames(self) -> None:
-        """
-        Validate that the input data frames have the required columns.
-        Warn if there is any missing data in columns other than TimeID.
-
-        Raises
-        ------
-        ValueError
-            If any of the input `cell_data`, `previous_bud_data`, or
-            `current_bud_data` DataFrames are empty, or if they are 
-            missing any of the required columns.
-
-        Warns
-        -----
-        MissingDataWarning
-            If any data frame contains missing values in columns other 
-            than `TimeID`.
-        """
-        input_dfs = {
-            "cell_data": self.cell_data,
-            "previous_bud_data": self.previous_bud_data,
-            "current_bud_data": self.current_bud_data
-        }
-        for name, df in input_dfs.items():
-            if df.empty:
-                raise ValueError(
-                    f"Cycle {self.cycle_id} data frame {name} is empty."
-                )
-        
-        required_cell_cols = {"TimeID", "Volume", "Concentration", "Interpolate"}
-        required_bud_cols = {"TimeID", "Volume", "Interpolate"}
-        
-        if not required_cell_cols.issubset(self.cell_data.columns):
-            missing = required_cell_cols - set(self.cell_data.columns)
-            raise ValueError(
-                f"Cycle {self.cycle_id} data frame cell_data missing required columns: "
-                f"{missing}"
-            )
-        
-        for name in ["previous_bud_data", "current_bud_data"]:
-            df = input_dfs[name]
-            if not required_bud_cols.issubset(df.columns):
-                missing = required_bud_cols - set(df.columns)
-                raise ValueError(
-                    f"Cycle {self.cycle_id} data frame "
-                    f"{name} missing columns: {missing}"
-                )
-        
-        # Warn if there are any missing values in columns other than TimeID.
-        for name, df in input_dfs.items():
-            temp = df.drop(columns=["TimeID"])
-            if temp.isna().any().any():
-                warn(
-                    f"Cycle {self.cycle_id} data frame "
-                    f"{name} contains missing values in columns other than TimeID.",
-                    MissingDataWarning
-                )
-
     def _validate_input_data_frame_time_ids(self) -> None:
         """
         Validate the TimeID values in the input data frames for
@@ -2761,16 +2768,6 @@ class MotherCellCycle(CellCycle):
                 f"which is less than the maximum of {max_extra_data_points}.",
                 InsufficientDataWarning
             )
-    
-    def _initialise_cycle_data(
-            self,
-            cell_data: pd.DataFrame, 
-            previous_bud_data: pd.DataFrame, 
-            current_bud_data: pd.DataFrame
-        ) -> None:
-        self.cell_data = cell_data.copy()
-        self.previous_bud_data = previous_bud_data.copy()
-        self.current_bud_data = current_bud_data.copy()
 
 
 class DaughterCellCycle(CellCycle):
