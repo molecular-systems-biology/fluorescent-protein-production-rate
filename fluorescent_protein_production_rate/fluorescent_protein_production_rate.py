@@ -99,8 +99,11 @@ class CellCycle:
             cycle's beginning and end for smoothing. Additional points
             will be discarded. Default is 8.
         **kwargs
-            Additional keyword arguments for child class initializers.
-            This base class does not use any additional arguments.
+            Additional keyword arguments for input DataFrames containing
+            TimeID, Volume, Concentration (for cells, not buds), 
+            Interpolate status, and optionally Surface area data.
+            The specific data required should be detailed in the child
+            class __init__() methods.
 
         Returns
         -------
@@ -118,9 +121,12 @@ class CellCycle:
         self._volume_gp: Optional[GaussianProcessRegressor] = None
         self._surface_area_gp: Optional[GaussianProcessRegressor] = None
 
-        # Pass additional keyword arguments to child class initializers. These should
-        # handle all additional data inputs to the class.
-        self._initialise_cycle_data(**kwargs)
+        # Store additional DataFrames. Keeping together as a Dict allows for iterating
+        # over them in other methods.
+        self.input_dfs = {}
+        for key, value in kwargs.items():
+            self.input_dfs[key] = value.copy()
+            setattr(self, key, self.input_dfs[key])
 
         self.validate_input_data(min_extra_data_points, max_extra_data_points)
 
@@ -569,11 +575,66 @@ class CellCycle:
     # Core analysis methods - these form the main pipeline.
     # Each method stores the results, generally in the _cycle_data
     # DataFrame, and returns self to enable method chaining.
-    def merge_cycle_data() -> None:
-        """Merge cell and bud data into a unified time series."""
-        raise NotImplementedError(
-            "merge_cycle_data() must be implemented in child classes."
+    def merge_cycle_data(
+            self,
+            image_capture_interval: int,
+            max_extra_data_points: int = 8
+        ) -> Self:
+        """
+        Merge cell and bud data into a unified time series.
+
+        This method combines volume data from the mother cell and both 
+        buds into a single DataFrame. It handles interpolation of 
+        flagged data points, adjusts bud volumes based on cell cycle 
+        events, and calculates time values in minutes from TimeIDs. If
+        Surface area columns are present, they are also interpolated
+        and adjusted to calculate a total surface area.
+
+        Parameters
+        ----------
+        image_capture_interval : int
+            The interval between image captures, in minutes. Used to 
+            calculate time values.
+        max_extra_data_points : int, optional
+            The maximum number of extra data points to include before 
+            and after the relevant cell cycle time range.
+            Default is 8.
+
+        Returns
+        -------
+        Self
+            The instance of the class with the merged cycle data stored 
+            and accessible from the .cycle_data attribute.
+
+        Notes
+        -----
+        The merged cycle data is clipped to have no more than 
+        `max_extra_data_points` before the previous cycle end and
+        after the current cycle end. In the case that Bud_0 is None,
+        points will be clipped before the current cycle if they are
+        missing from either the mother or previous bud data.
+        """
+        # Check whether Surface area columns are present in the data. Use them if 
+        # present in all three data frames, skip if they're missing from any.
+        input_has_surface_area = np.array(
+            ["Surface area" in df.columns for df in self.input_dfs.values()]
         )
+
+        if input_has_surface_area.all():
+            self._merge_cycle_data_with_volumes_and_surface_area(
+                image_capture_interval, max_extra_data_points
+            )
+        else:
+            if input_has_surface_area.any():
+                warn(
+                    "Surface area data is missing from some input data frames. "
+                    "Surface area will not be used in the merged cycle data.",
+                    MissingDataWarning
+                )
+            self._merge_cycle_data_with_volumes(
+                image_capture_interval, max_extra_data_points
+            )
+        return self
     
     def _merge_cycle_data_with_volumes() -> None:
         """
@@ -1904,11 +1965,6 @@ class CellCycle:
         if self._cycle_data_has_column(column):
             self._cycle_data.drop(columns=(column), inplace=True)
 
-    def _initialise_cycle_data() -> None:
-        """Initialise additional cycle data"""
-        raise NotImplementedError(
-            "_initialise_cycle_data() must be implemented in child classes."
-        )
 
 class MotherCellCycle(CellCycle):
     """
@@ -2006,70 +2062,6 @@ class MotherCellCycle(CellCycle):
         """TimeID of the previous bud event."""
         return self.cycle_events["Bud_0"]
 
-    def merge_cycle_data(
-            self,
-            image_capture_interval: int,
-            max_extra_data_points: int = 8
-        ) -> Self:
-        """
-        Merge cell and bud data into a unified time series.
-
-        This method combines volume data from the mother cell and both 
-        buds into a single DataFrame. It handles interpolation of 
-        flagged data points, adjusts bud volumes based on cell cycle 
-        events, and calculates time values in minutes from TimeIDs. If
-        Surface area columns are present, they are also interpolated
-        and adjusted to calculate a total surface area.
-
-        Parameters
-        ----------
-        image_capture_interval : int
-            The interval between image captures, in minutes. Used to 
-            calculate time values.
-        max_extra_data_points : int, optional
-            The maximum number of extra data points to include before 
-            and after the relevant cell cycle time range.
-            Default is 8.
-
-        Returns
-        -------
-        Self
-            The instance of the class with the merged cycle data stored 
-            and accessible from the .cycle_data attribute.
-
-        Notes
-        -----
-        The merged cycle data is clipped to have no more than 
-        `max_extra_data_points` before the previous cycle end and
-        after the current cycle end. In the case that Bud_0 is None,
-        points will be clipped before the current cycle if they are
-        missing from either the mother or previous bud data.
-        """
-        # Check whether Surface area columns are present in the data. Use them if 
-        # present in all three data frames, skip if they're missing from any.
-        input_has_surface_area = np.array(
-            [
-                "Surface area" in self.cell_data.columns,
-                "Surface area" in self.previous_bud_data.columns,
-                "Surface area" in self.current_bud_data.columns
-            ]
-        )
-
-        if input_has_surface_area.all():
-            self._merge_cycle_data_with_volumes_and_surface_area(
-                image_capture_interval, max_extra_data_points
-            )
-        else:
-            if input_has_surface_area.any():
-                warn(
-                    "Surface area data is missing from some input data frames. "
-                    "Surface area will not be used in the merged cycle data.",
-                    MissingDataWarning
-                )
-            self._merge_cycle_data_with_volumes(
-                image_capture_interval, max_extra_data_points
-            )
-        return self
 
     def _merge_cycle_data_with_volumes(
             self, image_capture_interval: int, max_extra_data_points: int = 8
