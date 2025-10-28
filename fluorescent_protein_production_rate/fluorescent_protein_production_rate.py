@@ -2070,7 +2070,6 @@ class MotherCellCycle(CellCycle):
     def previous_bud_surface_area(self) -> np.ndarray:
         """Surface area of the previous bud at each time point."""
         return self._get_cycle_data_column_or_raise(
-            "Previous bud volume", 
             "Previous bud surface area", 
             (
                 "Previous bud surface area not available. Call merge_data() first and "
