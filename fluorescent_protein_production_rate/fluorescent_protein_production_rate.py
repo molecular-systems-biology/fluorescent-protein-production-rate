@@ -2371,7 +2371,7 @@ class MotherCellCycle(CellCycle):
             + merged_data["Current bud volume"]
         )
         merged_data["Total surface area"] = (
-            merged_data["Surface Area"]
+            merged_data["Surface area"]
             + merged_data["Previous bud surface area"]
             + merged_data["Current bud surface area"]
         )
@@ -3061,7 +3061,7 @@ class DaughterCellCycle(CellCycle):
             + merged_data["Current bud volume"]
         )
         merged_data["Total surface area"] = (
-            merged_data["Surface Area"]
+            merged_data["Surface area"]
             + merged_data["Current bud surface area"]
         )
         merged_data["Time"] = (merged_data["TimeID"] - 1) * image_capture_interval
