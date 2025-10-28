@@ -802,6 +802,11 @@ class CellCycle:
         ValueError
             If `apply_maturation_correction` is True and 
             `maturation_time` is not provided.
+
+        Notes
+        -----
+        Formula for maturation correction is taken from this Guerra et 
+        al. 2022, https://doi.org/10.1242/jcs.260378
         """
         # Estimate derivatives for calculating fluorophore production rate. 
         # Predict abundance values from the stored GaussianProcessRegressor using
