@@ -2775,7 +2775,7 @@ class MotherCellCycle(CellCycle):
             if extra_previous_bud_data_points < max_extra_data_points:
                 warn(
                     f"Cycle {self.cycle_id} Bud_0 is None and previous_bud_data "
-                    f"only has {extra_previous_data_points} data points before the " 
+                    f"only has {extra_previous_bud_data_points} data points before the " 
                     f"previous cycle end event which is less than the maximum of "
                     f"{max_extra_data_points}.",
                     InsufficientDataWarning
