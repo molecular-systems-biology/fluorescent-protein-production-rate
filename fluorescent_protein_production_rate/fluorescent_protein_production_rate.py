@@ -642,7 +642,7 @@ class CellCycle:
             )
         return self
     
-    def _merge_cycle_data_with_volumes() -> None:
+    def _merge_cycle_data_with_volumes(self) -> None:
         """
         Merge the volume data from cell and buds into a single 
         DataFrame.
@@ -651,7 +651,7 @@ class CellCycle:
             "_merge_cycle_data_with_volumes() must be implemented in child classes."
         )
     
-    def _merge_cycle_data_with_volumes_and_surface_area() -> None:
+    def _merge_cycle_data_with_volumes_and_surface_area(self) -> None:
         """
         Merge the volume data from cell and buds into a single 
         DataFrame.
@@ -1871,7 +1871,7 @@ class CellCycle:
             "_validate_cycle_events() must be implemented in child classes."
         )
 
-    def _validate_input_data_frame_time_ids() -> None:
+    def _validate_input_data_frame_time_ids(self) -> None:
         """
         Validate the TimeID values in the input data frames for
         consistency and correctness.
@@ -1880,7 +1880,7 @@ class CellCycle:
             "_validate_input_data_frame_time_ids() must be implemented in child classes."
         )
         
-    def _validate_sufficient_extra_data_points() -> None:
+    def _validate_sufficient_extra_data_points(self) -> None:
         """
         Validate that the cycle data has sufficient extra data points
         before and after the cycle end events for smoothing purposes.
