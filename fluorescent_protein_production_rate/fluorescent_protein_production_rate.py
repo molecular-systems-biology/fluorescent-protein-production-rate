@@ -120,7 +120,7 @@ class CellCycle:
         self.cycle_end_event = cycle_end_event
 
         # Initialize internal data containers for calculated values - these will
-        # be populated by analysis methods and typically acccessed via properties.
+        # be populated by analysis methods and typically accessed via properties.
         self._cycle_data: Optional[pd.DataFrame] = None
         self._abundance_gp: Optional[GaussianProcessRegressor] = None
         self._volume_gp: Optional[GaussianProcessRegressor] = None
