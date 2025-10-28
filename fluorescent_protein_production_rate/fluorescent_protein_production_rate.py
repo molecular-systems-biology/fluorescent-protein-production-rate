@@ -150,7 +150,8 @@ class CellCycle:
         Check equality based on cycle ID and cycle data values.
         Two CellCycle instances are considered equal if they have the
         same cycle ID and their cycle data DataFrames are equal. Raises
-        and error if the other object is not a CellCycle instance.
+        an error if the other object is not a CellCycle instance or if
+        either instance has not yet merged its data.
 
         Parameters
         ----------
