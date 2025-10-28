@@ -2512,8 +2512,11 @@ class MotherCellCycle(CellCycle):
             "Surface area"
         ].values[0]
         ax.plot(
-            self.time[previous_bud_mask], 
-            self.previous_bud_volume[previous_bud_mask] + previous_bud_final_surface_area,
+            self.time[previous_bud_mask],
+            (
+                self.previous_bud_surface_area[previous_bud_mask] 
+                + previous_bud_final_surface_area
+            ),
             marker="x",
             label="Previous bud surface area"
         )
