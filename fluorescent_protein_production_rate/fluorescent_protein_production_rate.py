@@ -130,9 +130,7 @@ class CellCycle:
         # data. Keeping together as a Dict allows for iterating over them in other 
         # methods. Create properties in child classes for each input DataFrame to allow 
         # easy access. 
-        self.input_dfs = self.input_dfs = {
-            key: value.copy() for key, value in input_dfs.items()
-        }
+        self.input_dfs = {key: value.copy() for key, value in input_dfs.items()}
         
         self.validate_input_data(min_extra_data_points, max_extra_data_points)
 
