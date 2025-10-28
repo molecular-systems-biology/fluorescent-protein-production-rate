@@ -169,12 +169,22 @@ class CellCycle:
         ------
         TypeError
             If `other` is not an instance of CellCycle.
+        ValueError
+            If either CellCycle instance has not yet merged its data.
         """
         if not isinstance(other, CellCycle):
             raise TypeError(
                 f"Cannot compare CellCycle with {type(other).__name__}. "
                 "Comparison is only supported between CellCycle instances."
             )
+        # Handle the situation where comparison is being performed between one or more
+        # CellCycle instances that have not yet merged their data.
+        if self._cycle_data is None or other._cycle_data is None:
+            raise ValueError(
+                "Cannot compare CellCycle instances where one or both have not yet "
+                "merged their data. Call merge_cycle_data() on both instances first."
+            )
+
         # Compare cycle IDs and cycle data DataFrames.
         return (
             self.cycle_id == other.cycle_id
