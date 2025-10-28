@@ -126,14 +126,13 @@ class CellCycle:
         self._volume_gp: Optional[GaussianProcessRegressor] = None
         self._surface_area_gp: Optional[GaussianProcessRegressor] = None
 
-        # Store additional DataFrames. Keeping together as a Dict allows for iterating
-        # over them in other methods.
-        self.input_dfs = {}
-        # Store copies to avoid accidental overwriting of input data. Create properties
-        # for each input DataFrame to allow easy access.
-        for key, value in input_dfs.items():
-            self.input_dfs[key] = value.copy()
-            setattr(self, key, self.input_dfs[key])
+        # Store copies of additional DataFrames to avoid accidental overwriting of input 
+        # data. Keeping together as a Dict allows for iterating over them in other 
+        # methods. Create properties in child classes for each input DataFrame to allow 
+        # easy access. 
+        self.input_dfs = self.input_dfs = {
+            key: value.copy() for key, value in input_dfs.items()
+        }
         
         self.validate_input_data(min_extra_data_points, max_extra_data_points)
 
@@ -2049,7 +2048,7 @@ class MotherCellCycle(CellCycle):
             {
                 "cell_data" : cell_data,
                 "previous_bud_data" : previous_bud_data,
-                "current_bud_data" :current_bud_data
+                "current_bud_data" : current_bud_data
             },
             cycle_events,
             cycle_begin_event,
@@ -2057,6 +2056,21 @@ class MotherCellCycle(CellCycle):
             min_extra_data_points,
             max_extra_data_points,
         )
+
+    @property
+    def cell_data(self) -> pd.DataFrame:
+        """DataFrame containing data for the cell."""
+        return self.input_dfs["cell_data"]
+
+    @property
+    def previous_bud_data(self) -> pd.DataFrame:
+        """DataFrame containing data for the previous bud."""
+        return self.input_dfs["previous_bud_data"]
+    
+    @property
+    def current_bud_data(self) -> pd.DataFrame:
+        """DataFrame containing data for the current bud."""
+        return self.input_dfs["current_bud_data"]
 
     @property
     def previous_bud_volume(self) -> np.ndarray:
@@ -2836,7 +2850,7 @@ class DaughterCellCycle(CellCycle):
             cycle_id,
             {
                 "cell_data" : cell_data,
-                "current_bud_data" :current_bud_data
+                "current_bud_data" : current_bud_data
             },
             cycle_events,
             cycle_begin_event,
@@ -2844,6 +2858,16 @@ class DaughterCellCycle(CellCycle):
             min_extra_data_points,
             max_extra_data_points,
         )
+
+    @property
+    def cell_data(self) -> pd.DataFrame:
+        """pd.DataFrame: DataFrame containing data for the cell."""
+        return self.input_dfs["cell_data"]
+    
+    @property
+    def current_bud_data(self) -> pd.DataFrame:
+        """pd.DataFrame: DataFrame containing data for the current bud."""
+        return self.input_dfs["current_bud_data"]
 
     def _merge_cycle_data_with_volumes(
             self, image_capture_interval: int, max_extra_data_points: int = 8
